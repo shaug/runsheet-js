@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/shaug/runsheet-js/compare/v0.1.0...v0.2.0) (2026-03-05)
+
+
+### Features
+
+* add retry and timeout options to defineStep ([6359d62](https://github.com/shaug/runsheet-js/commit/6359d627c4bc5706f6d38845d2fc2ba97cbe7682))
+
 ## 0.1.0 (2026-03-05)
 
 
