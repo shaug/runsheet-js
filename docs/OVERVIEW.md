@@ -218,6 +218,11 @@ return { completed, failed }
 - **Timers and delays** — scheduled pauses between steps or timeout limits on
   step execution, useful for rate-limiting, cooldown periods, or enforcing
   maximum step duration.
+- **Dependency injection / services** — a separate `services` channel (distinct
+  from accumulated context) for runtime dependencies like DB clients, queue
+  connections, and external API clients. Currently these flow through args,
+  which works but conflates infrastructure with business inputs. A dedicated
+  injection mechanism would make step signatures cleaner and testing easier.
 - **`strict: true` pipeline flag** — optional key collision detection at build
   time for teams that want to prevent unintentional `provides` overlap.
 
