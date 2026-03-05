@@ -1,0 +1,27 @@
+export { defineStep } from './define-step.js';
+export { RunsheetError } from './errors.js';
+export type { RunsheetErrorCode } from './errors.js';
+export { buildPipeline } from './pipeline.js';
+export type { Pipeline, PipelineConfig } from './pipeline.js';
+export { when } from './when.js';
+export type { ConditionalStep } from './when.js';
+export type { StepMiddleware, StepInfo, StepExecutor } from './middleware.js';
+export { createPipeline } from './builder.js';
+export type { PipelineBuilder } from './builder.js';
+
+export type {
+  Step,
+  TypedStep,
+  StepConfig,
+  StepContext,
+  StepOutput,
+  PipelineResult,
+  PipelineSuccess,
+  PipelineFailure,
+  PipelineExecutionMeta,
+  RollbackReport,
+  RollbackFailure,
+} from './types.js';
+
+// Re-export commonly used types from composable-functions
+export type { Result, Success, Failure } from 'composable-functions';

@@ -1,0 +1,242 @@
+# runsheet
+
+> Type-safe, composable business logic pipelines for TypeScript.
+
+runsheet is an in-memory pipeline orchestration library. You define small,
+focused steps with explicit inputs and outputs, then compose them into pipelines
+that handle context passing, rollback on failure, and schema validation at every
+boundary.
+
+Built on composable-functions for Result semantics. Zod is supported for runtime
+schema validation but is optional — TypeScript generics alone provide
+compile-time safety.
+
+## Core concepts
+
+- Steps declare `requires` (input from context) and `provides` (output added to
+  context). Context accumulates immutably across steps.
+- Pipelines run steps sequentially. On failure, rollback handlers execute in
+  reverse order with snapshot-based context.
+- Results use `{ success, data, errors }` — never throws.
+
+## Quick reference
+
+### Install
+
+```bash
+pnpm add runsheet composable-functions zod
+```
+
+composable-functions is a required peer dependency. zod is optional (only needed
+if you use schema validation).
+
+### defineStep
+
+Define a pipeline step with typed inputs and outputs.
+
+```typescript
+import { defineStep } from 'runsheet';
+import { z } from 'zod';
+
+// With Zod schemas (runtime + compile-time validation)
+const fetchUser = defineStep({
+  name: 'fetchUser',
+  requires: z.object({ userId: z.string() }),
+  provides: z.object({ user: z.object({ name: z.string() }) }),
+  run: async (ctx) => {
+    const user = await db.users.find(ctx.userId);
+    return { user };
+  },
+});
+
+// With generics only (compile-time validation, no runtime schemas)
+const logUser = defineStep<{ user: { name: string } }, { loggedAt: Date }>({
+  name: 'logUser',
+  run: async (ctx) => {
+    console.log(ctx.user.name);
+    return { loggedAt: new Date() };
+  },
+});
+
+// With rollback
+const chargePayment = defineStep({
+  name: 'chargePayment',
+  requires: z.object({ amount: z.number() }),
+  provides: z.object({ chargeId: z.string() }),
+  run: async (ctx) => {
+    const charge = await stripe.charges.create({ amount: ctx.amount });
+    return { chargeId: charge.id };
+  },
+  rollback: async (_ctx, output) => {
+    await stripe.refunds.create({ charge: output.chargeId });
+  },
+});
+```
+
+Step run functions can be sync or async.
+
+### buildPipeline
+
+Build a pipeline from an array of steps. The result type is inferred from the
+steps.
+
+```typescript
+import { buildPipeline } from 'runsheet';
+
+const pipeline = buildPipeline({
+  name: 'checkout',
+  steps: [fetchUser, chargePayment, sendEmail],
+});
+
+const result = await pipeline.run({ userId: '123', amount: 50 });
+
+if (result.success) {
+  result.data.chargeId; // string — fully typed
+} else {
+  result.errors; // what went wrong
+  result.rollback; // { completed: string[], failed: RollbackFailure[] }
+}
+```
+
+Optional argsSchema validates pipeline input:
+
+```typescript
+const pipeline = buildPipeline({
+  name: 'checkout',
+  steps: [fetchUser, chargePayment],
+  argsSchema: z.object({ userId: z.string(), amount: z.number() }),
+});
+```
+
+### createPipeline (builder API)
+
+Fluent builder with progressive type narrowing.
+
+```typescript
+import { createPipeline } from 'runsheet';
+
+const pipeline = createPipeline('checkout', z.object({ userId: z.string() }))
+  .step(fetchUser)
+  .step(chargePayment)
+  .step(sendEmail)
+  .build();
+```
+
+Type-only args (no runtime validation of pipeline input):
+
+```typescript
+const pipeline = createPipeline<{ userId: string }>('checkout')
+  .step(fetchUser)
+  .build();
+```
+
+### when (conditional steps)
+
+```typescript
+import { when } from 'runsheet';
+
+const pipeline = buildPipeline({
+  name: 'checkout',
+  steps: [
+    fetchUser,
+    chargePayment,
+    when((ctx) => ctx.amount > 10000, notifyManager),
+    sendEmail,
+  ],
+});
+```
+
+Skipped steps produce no snapshot and no rollback entry.
+
+### Middleware
+
+Middleware wraps the full step lifecycle including schema validation.
+
+```typescript
+import type { StepMiddleware } from 'runsheet';
+
+const timing: StepMiddleware = (step, next) => async (ctx) => {
+  const start = performance.now();
+  const result = await next(ctx);
+  console.log(`${step.name}: ${performance.now() - start}ms`);
+  return result;
+};
+
+const pipeline = buildPipeline({
+  name: 'checkout',
+  steps: [fetchUser, chargePayment],
+  middleware: [timing],
+});
+
+// Or with the builder:
+createPipeline('checkout')
+  .use(timing)
+  .step(fetchUser)
+  .step(chargePayment)
+  .build();
+```
+
+### PipelineResult
+
+Every pipeline.run() returns a PipelineResult (never throws):
+
+```typescript
+// Success
+{
+  success: true,
+  data: { /* accumulated context */ },
+  errors: [],
+  meta: {
+    pipeline: 'checkout',
+    args: { userId: '123' },
+    stepsExecuted: ['fetchUser', 'chargePayment'],
+    stepsSkipped: [],
+  },
+}
+
+// Failure
+{
+  success: false,
+  errors: [Error],
+  meta: { pipeline, args, stepsExecuted, stepsSkipped },
+  failedStep: 'chargePayment',
+  rollback: { completed: ['fetchUser'], failed: [] },
+}
+```
+
+### RunsheetError
+
+Library-produced errors (validation failures, predicate errors) are
+RunsheetError instances with a discriminated `code` property:
+
+- REQUIRES_VALIDATION — step's requires schema failed
+- PROVIDES_VALIDATION — step's provides schema failed
+- ARGS_VALIDATION — pipeline argsSchema failed
+- PREDICATE — when() predicate threw
+
+Application errors (thrown from step run functions) pass through as-is.
+
+## Key exports
+
+Functions: defineStep, buildPipeline, createPipeline, when Classes:
+RunsheetError Types: Step, TypedStep, StepConfig, Pipeline, PipelineBuilder,
+PipelineResult, PipelineSuccess, PipelineFailure, PipelineExecutionMeta,
+RollbackReport, RollbackFailure, StepMiddleware, StepInfo, StepExecutor,
+ConditionalStep, RunsheetErrorCode, Result, Success, Failure
+
+## Important patterns
+
+1. Steps signal failure by throwing. The pipeline catches throws and returns a
+   Result. Never return a failure Result from a step directly.
+
+2. Context is frozen (Object.freeze) at every step boundary. Steps receive a
+   readonly snapshot and return only what they add.
+
+3. Rollback is best-effort. If a rollback handler throws, remaining rollbacks
+   still execute. All rollback errors are collected.
+
+4. Last writer wins for context keys. If two steps both provide `status`, the
+   later step's value is used.
+
+5. Schemas are optional. Use Zod schemas for runtime validation at step
+   boundaries, or use TypeScript generics alone for compile-time safety.
