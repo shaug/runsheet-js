@@ -247,6 +247,37 @@ const placeOrder = createPipeline<{ orderId: string }>('placeOrder')
   .build();
 ```
 
+## Retry and timeout
+
+Steps can declare retry policies and timeouts directly:
+
+```typescript
+const callExternalApi = defineStep({
+  name: 'callExternalApi',
+  provides: z.object({ response: z.string() }),
+  retry: { count: 3, delay: 200, backoff: 'exponential' },
+  timeout: 5000,
+  run: async () => {
+    const res = await fetch('https://api.example.com/data');
+    return { response: await res.text() };
+  },
+});
+```
+
+**Retry** re-executes the step's `run` function on failure. The `retryIf`
+predicate lets you inspect errors and decide whether to retry:
+
+```typescript
+retry: {
+  count: 3,
+  retryIf: (errors) => errors.some((e) => e.message.includes('ECONNRESET')),
+}
+```
+
+**Timeout** races `run` against a timer. If the step exceeds the limit, it fails
+with a `RunsheetError` code `'TIMEOUT'`. When both are set, each retry attempt
+gets its own timeout.
+
 ## Rollback
 
 When a step fails, rollback handlers for all previously completed steps execute
@@ -314,13 +345,15 @@ Define a pipeline step. Returns a strongly typed `TypedStep` — `run`,
 `rollback`, `requires`, and `provides` all carry concrete types matching the
 schemas or generics you provide.
 
-| Option     | Type                    | Description                                       |
-| ---------- | ----------------------- | ------------------------------------------------- |
-| `name`     | `string`                | Step name (used in metadata and rollback reports) |
-| `requires` | `ZodSchema`             | Optional schema for required context keys         |
-| `provides` | `ZodSchema`             | Optional schema for provided context keys         |
-| `run`      | `(ctx) => output`       | Step implementation (sync or async)               |
-| `rollback` | `(ctx, output) => void` | Optional rollback handler                         |
+| Option     | Type                    | Description                                        |
+| ---------- | ----------------------- | -------------------------------------------------- |
+| `name`     | `string`                | Step name (used in metadata and rollback reports)  |
+| `requires` | `ZodSchema`             | Optional schema for required context keys          |
+| `provides` | `ZodSchema`             | Optional schema for provided context keys          |
+| `run`      | `(ctx) => output`       | Step implementation (sync or async)                |
+| `rollback` | `(ctx, output) => void` | Optional rollback handler                          |
+| `retry`    | `RetryPolicy`           | Optional retry policy for transient failures       |
+| `timeout`  | `number`                | Optional max duration in ms for the `run` function |
 
 ### `buildPipeline(config)`
 

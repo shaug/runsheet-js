@@ -15,6 +15,7 @@ export type {
   StepConfig,
   StepContext,
   StepOutput,
+  RetryPolicy,
   PipelineResult,
   PipelineSuccess,
   PipelineFailure,

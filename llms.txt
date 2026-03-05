@@ -76,6 +76,44 @@ const chargePayment = defineStep({
 
 Step run functions can be sync or async.
 
+### Retry and timeout
+
+```typescript
+const callApi = defineStep({
+  name: 'callApi',
+  provides: z.object({ data: z.string() }),
+  retry: { count: 3, delay: 200, backoff: 'exponential' },
+  timeout: 5000,
+  run: async () => {
+    const res = await fetch('https://api.example.com');
+    return { data: await res.text() };
+  },
+});
+
+// With retryIf to only retry specific errors
+const selective = defineStep({
+  name: 'selective',
+  retry: {
+    count: 3,
+    retryIf: (errors) => errors.some((e) => e.message.includes('ECONNRESET')),
+  },
+  run: async () => {
+    /* ... */
+  },
+});
+```
+
+Retry re-executes run on failure up to count times. Timeout races run against a
+timer — fails with RunsheetError code 'TIMEOUT'. When both are set, each retry
+attempt gets its own timeout.
+
+RetryPolicy type:
+
+- count: number (required) — max retry attempts
+- delay?: number — base delay in ms (default 0)
+- backoff?: 'linear' | 'exponential' (default 'linear')
+- retryIf?: (errors: Error[]) => boolean — return false to stop retrying
+
 ### buildPipeline
 
 Build a pipeline from an array of steps. The result type is inferred from the
@@ -214,16 +252,19 @@ RunsheetError instances with a discriminated `code` property:
 - PROVIDES_VALIDATION — step's provides schema failed
 - ARGS_VALIDATION — pipeline argsSchema failed
 - PREDICATE — when() predicate threw
+- TIMEOUT — step exceeded its timeout
+- RETRY_EXHAUSTED — step failed after all retry attempts
 
 Application errors (thrown from step run functions) pass through as-is.
 
 ## Key exports
 
 Functions: defineStep, buildPipeline, createPipeline, when Classes:
-RunsheetError Types: Step, TypedStep, StepConfig, Pipeline, PipelineBuilder,
-PipelineResult, PipelineSuccess, PipelineFailure, PipelineExecutionMeta,
-RollbackReport, RollbackFailure, StepMiddleware, StepInfo, StepExecutor,
-ConditionalStep, RunsheetErrorCode, Result, Success, Failure
+RunsheetError Types: Step, TypedStep, StepConfig, RetryPolicy, Pipeline,
+PipelineBuilder, PipelineResult, PipelineSuccess, PipelineFailure,
+PipelineExecutionMeta, RollbackReport, RollbackFailure, StepMiddleware,
+StepInfo, StepExecutor, ConditionalStep, RunsheetErrorCode, Result, Success,
+Failure
 
 ## Important patterns
 

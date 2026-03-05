@@ -213,11 +213,6 @@ return { completed, failed }
   collections, or filtering steps dynamically — moving toward the expressiveness
   of [AWS Step Functions] but with type-safe, code-first ergonomics instead of
   YAML configuration.
-- **Retries** — configurable per-step retry policies (count, backoff strategy)
-  for transient failures, without requiring the caller to implement retry logic.
-- **Timers and delays** — scheduled pauses between steps or timeout limits on
-  step execution, useful for rate-limiting, cooldown periods, or enforcing
-  maximum step duration.
 - **Dependency injection / services** — a separate `services` channel (distinct
   from accumulated context) for runtime dependencies like DB clients, queue
   connections, and external API clients. Currently these flow through args,

@@ -60,6 +60,10 @@ export type Step = {
   readonly rollback:
     | ((ctx: Readonly<StepContext>, output: Readonly<StepOutput>) => Promise<void>)
     | undefined;
+  /** Optional retry policy for the step's `run` function. */
+  readonly retry: RetryPolicy | undefined;
+  /** Optional timeout in milliseconds for the step's `run` function. */
+  readonly timeout: number | undefined;
 };
 
 /**
@@ -135,6 +139,38 @@ export type ExtractProvides<T extends Step> =
   T extends TypedStep<StepContext, infer P> ? P : object;
 
 /**
+ * Retry policy for a step's `run` function.
+ *
+ * When a step fails and a retry policy is configured, the step's `run`
+ * function is re-executed up to `count` times before the failure is
+ * propagated. Schema validation is not retried (it's deterministic).
+ */
+export type RetryPolicy = {
+  /** Maximum number of retry attempts (not counting the initial attempt). */
+  readonly count: number;
+  /**
+   * Base delay in milliseconds between attempts.
+   * @default 0
+   */
+  readonly delay?: number;
+  /**
+   * Backoff strategy applied to the base delay.
+   * - `'linear'` — delay × attempt number (1st retry = delay, 2nd = 2×delay, etc.)
+   * - `'exponential'` — delay × 2^(attempt - 1) (1st = delay, 2nd = 2×delay, 3rd = 4×delay, etc.)
+   * @default 'linear'
+   */
+  readonly backoff?: 'linear' | 'exponential';
+  /**
+   * Optional predicate to determine if a failure is retryable. Receives
+   * the errors from the failed attempt. Return `true` to retry, `false`
+   * to fail immediately without further attempts.
+   *
+   * When omitted, all failures are retried.
+   */
+  readonly retryIf?: (errors: readonly Error[]) => boolean;
+};
+
+/**
  * Configuration object passed to `defineStep()`.
  *
  * Schemas are optional — omit them for generics-only steps that rely on
@@ -184,6 +220,17 @@ export type StepConfig<Requires extends StepContext, Provides extends StepContex
    * @param output - The frozen output this step produced.
    */
   rollback?: (ctx: Readonly<Requires>, output: Readonly<Provides>) => void | Promise<void>;
+  /**
+   * Retry policy for transient failures. When set, the step's `run`
+   * function is re-executed up to `retry.count` times on failure.
+   * Schema validation is not retried.
+   */
+  retry?: RetryPolicy;
+  /**
+   * Maximum time in milliseconds the step's `run` function may take.
+   * If exceeded, the step fails with a `RunsheetError` code `'TIMEOUT'`.
+   */
+  timeout?: number;
 };
 
 // ---------------------------------------------------------------------------

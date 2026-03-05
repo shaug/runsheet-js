@@ -18,7 +18,9 @@ export type RunsheetErrorCode =
   | 'REQUIRES_VALIDATION'
   | 'PROVIDES_VALIDATION'
   | 'ARGS_VALIDATION'
-  | 'PREDICATE';
+  | 'PREDICATE'
+  | 'TIMEOUT'
+  | 'RETRY_EXHAUSTED';
 
 /**
  * Base error class for all errors produced by the runsheet library.

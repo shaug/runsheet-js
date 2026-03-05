@@ -1,7 +1,7 @@
 import { describe, expect, it, assertType } from 'vitest';
 import { z } from 'zod';
 import type { Result } from './index.js';
-import { defineStep } from './index.js';
+import { defineStep, buildPipeline, RunsheetError } from './index.js';
 
 describe('defineStep', () => {
   describe('with schemas', () => {
@@ -166,6 +166,209 @@ describe('defineStep', () => {
       assertType<(ctx: Readonly<{ name: string }>) => Promise<Result<{ greeting: string }>>>(
         step.run,
       );
+    });
+  });
+
+  describe('retry', () => {
+    it('retries on failure up to count times', async () => {
+      let attempts = 0;
+      const step = defineStep({
+        name: 'flaky',
+        provides: z.object({ value: z.number() }),
+        retry: { count: 2 },
+        run: async () => {
+          attempts++;
+          if (attempts < 3) throw new Error('transient');
+          return { value: 42 };
+        },
+      });
+
+      const pipeline = buildPipeline({ name: 'test', steps: [step] });
+      const result = await pipeline.run({});
+      expect(result.success).toBe(true);
+      expect(attempts).toBe(3); // 1 initial + 2 retries
+    });
+
+    it('fails with RETRY_EXHAUSTED when all retries fail', async () => {
+      const step = defineStep({
+        name: 'always-fails',
+        retry: { count: 2 },
+        run: async () => {
+          throw new Error('permanent');
+        },
+      });
+
+      const pipeline = buildPipeline({ name: 'test', steps: [step] });
+      const result = await pipeline.run({});
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const retryError = result.errors.find(
+          (e) => e instanceof RunsheetError && e.code === 'RETRY_EXHAUSTED',
+        );
+        expect(retryError).toBeDefined();
+        expect(retryError!.message).toContain('2 retries');
+      }
+    });
+
+    it('respects retryIf predicate', async () => {
+      let attempts = 0;
+
+      class RetryableError extends Error {
+        retryable = true;
+      }
+
+      const step = defineStep({
+        name: 'selective',
+        retry: {
+          count: 3,
+          retryIf: (errors) => errors.some((e) => e instanceof RetryableError),
+        },
+        run: async () => {
+          attempts++;
+          if (attempts === 1) throw new RetryableError('try again');
+          throw new Error('not retryable');
+        },
+      });
+
+      const pipeline = buildPipeline({ name: 'test', steps: [step] });
+      const result = await pipeline.run({});
+      expect(result.success).toBe(false);
+      expect(attempts).toBe(2); // initial + 1 retry, then retryIf returned false
+      if (!result.success) {
+        // Should NOT have RETRY_EXHAUSTED since retryIf stopped it early
+        const retryError = result.errors.find(
+          (e) => e instanceof RunsheetError && e.code === 'RETRY_EXHAUSTED',
+        );
+        expect(retryError).toBeUndefined();
+      }
+    });
+
+    it('applies linear backoff delay', async () => {
+      let attempts = 0;
+      const timestamps: number[] = [];
+
+      const step = defineStep({
+        name: 'delayed',
+        retry: { count: 2, delay: 50, backoff: 'linear' },
+        run: async () => {
+          attempts++;
+          timestamps.push(Date.now());
+          if (attempts < 3) throw new Error('fail');
+          return { done: true };
+        },
+      });
+
+      const pipeline = buildPipeline({ name: 'test', steps: [step] });
+      await pipeline.run({});
+
+      // 1st retry: ~50ms, 2nd retry: ~100ms
+      const gap1 = timestamps[1] - timestamps[0];
+      const gap2 = timestamps[2] - timestamps[1];
+      expect(gap1).toBeGreaterThanOrEqual(40); // ~50ms with tolerance
+      expect(gap2).toBeGreaterThanOrEqual(80); // ~100ms with tolerance
+    });
+
+    it('applies exponential backoff delay', async () => {
+      let attempts = 0;
+      const timestamps: number[] = [];
+
+      const step = defineStep({
+        name: 'exp-delayed',
+        retry: { count: 2, delay: 50, backoff: 'exponential' },
+        run: async () => {
+          attempts++;
+          timestamps.push(Date.now());
+          if (attempts < 3) throw new Error('fail');
+          return { done: true };
+        },
+      });
+
+      const pipeline = buildPipeline({ name: 'test', steps: [step] });
+      await pipeline.run({});
+
+      // 1st retry: 50 * 2^0 = 50ms, 2nd retry: 50 * 2^1 = 100ms
+      const gap1 = timestamps[1] - timestamps[0];
+      const gap2 = timestamps[2] - timestamps[1];
+      expect(gap1).toBeGreaterThanOrEqual(40);
+      expect(gap2).toBeGreaterThanOrEqual(80);
+    });
+
+    it('stores retry config on the step object', () => {
+      const step = defineStep({
+        name: 'with-retry',
+        retry: { count: 3, delay: 100, backoff: 'exponential' },
+        run: async () => ({ done: true }),
+      });
+
+      expect(step.retry).toEqual({ count: 3, delay: 100, backoff: 'exponential' });
+    });
+  });
+
+  describe('timeout', () => {
+    it('fails with TIMEOUT when step exceeds timeout', async () => {
+      const step = defineStep({
+        name: 'slow',
+        timeout: 50,
+        run: async () => {
+          await new Promise((r) => setTimeout(r, 200));
+          return { done: true };
+        },
+      });
+
+      const pipeline = buildPipeline({ name: 'test', steps: [step] });
+      const result = await pipeline.run({});
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.errors[0]).toBeInstanceOf(RunsheetError);
+        expect((result.errors[0] as RunsheetError).code).toBe('TIMEOUT');
+        expect(result.errors[0].message).toContain('50ms');
+      }
+    });
+
+    it('succeeds when step completes within timeout', async () => {
+      const step = defineStep({
+        name: 'fast',
+        timeout: 500,
+        provides: z.object({ done: z.boolean() }),
+        run: async () => ({ done: true }),
+      });
+
+      const pipeline = buildPipeline({ name: 'test', steps: [step] });
+      const result = await pipeline.run({});
+      expect(result.success).toBe(true);
+    });
+
+    it('stores timeout config on the step object', () => {
+      const step = defineStep({
+        name: 'with-timeout',
+        timeout: 5000,
+        run: async () => ({ done: true }),
+      });
+
+      expect(step.timeout).toBe(5000);
+    });
+
+    it('timeout works together with retry', async () => {
+      let attempts = 0;
+
+      const step = defineStep({
+        name: 'timeout-retry',
+        timeout: 50,
+        retry: { count: 2 },
+        run: async () => {
+          attempts++;
+          if (attempts < 3) {
+            await new Promise((r) => setTimeout(r, 200));
+          }
+          return { done: true };
+        },
+      });
+
+      const pipeline = buildPipeline({ name: 'test', steps: [step] });
+      const result = await pipeline.run({});
+      // First two attempts timeout, third succeeds
+      expect(result.success).toBe(true);
+      expect(attempts).toBe(3);
     });
   });
 
