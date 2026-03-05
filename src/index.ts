@@ -23,5 +23,5 @@ export type {
   RollbackFailure,
 } from './types.js';
 
-// Re-export commonly used types from composable-functions
+// Re-export Result types so consumers never need to import composable-functions
 export type { Result, Success, Failure } from 'composable-functions';

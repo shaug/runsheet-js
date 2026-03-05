@@ -52,10 +52,16 @@ A pipeline orchestration library with:
 ## Install
 
 ```bash
-pnpm add runsheet composable-functions zod
+pnpm add runsheet zod
 ```
 
-`composable-functions` and `zod` are peer dependencies.
+`zod` is an optional peer dependency — only needed if you use schema validation.
+If you only use TypeScript generics for type safety, you can install runsheet
+alone:
+
+```bash
+pnpm add runsheet
+```
 
 ## Quick start
 
