@@ -79,7 +79,7 @@
   "homepage": "https://github.com/shaug/runsheet-js#readme",
   "packageManager": "pnpm@10.27.0",
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "peerDependencies": {
     "composable-functions": "^4.0.0",
