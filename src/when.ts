@@ -52,5 +52,7 @@ export function when<Requires extends StepContext, Provides extends StepContext>
 
 /** Type guard for conditional steps. */
 export function isConditionalStep(step: Step): step is ConditionalStep {
-  return 'predicate' in step && typeof (step as StepContext)['predicate'] === 'function';
+  return (
+    'predicate' in step && typeof (step as Record<string, unknown>)['predicate'] === 'function'
+  );
 }

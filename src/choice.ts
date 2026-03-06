@@ -7,7 +7,7 @@ import type {
   UnionToIntersection,
 } from './types.js';
 import type { AsContext } from './internal.js';
-import { validateInnerSchema } from './internal.js';
+import { runInnerStep } from './internal.js';
 import { RunsheetError } from './errors.js';
 
 /** A [predicate, step] tuple used by {@link choice}. */
@@ -105,8 +105,9 @@ export function choice(...args: (BranchTuple | TypedStep)[]): TypedStep<StepCont
   const name = `choice(${innerBranches.map(([, step]) => step.name).join(', ')})`;
 
   // Track which branch ran per execution for rollback.
-  // Keyed by the output object — safe for concurrent pipeline.run() calls
-  // because each execution produces a distinct output object.
+  // INVARIANT: This relies on pipeline.ts storing the exact result.data
+  // reference in its outputs array (pipeline.ts:344-345). If the pipeline
+  // ever clones result.data, this WeakMap lookup will silently fail.
   const branchMap = new WeakMap<object, number>();
 
   const run: Step['run'] = async (ctx) => {
@@ -126,27 +127,8 @@ export function choice(...args: (BranchTuple | TypedStep)[]): TypedStep<StepCont
 
       if (!matches) continue;
 
-      // Validate requires
-      const requiresErrors = validateInnerSchema(
-        step.requires,
-        ctx,
-        `${step.name} requires`,
-        'REQUIRES_VALIDATION',
-      );
-      if (requiresErrors) return { success: false as const, errors: requiresErrors };
-
-      // Run step
-      const result = await step.run(ctx);
+      const result = await runInnerStep(step, ctx);
       if (!result.success) return result;
-
-      // Validate provides
-      const providesErrors = validateInnerSchema(
-        step.provides,
-        result.data,
-        `${step.name} provides`,
-        'PROVIDES_VALIDATION',
-      );
-      if (providesErrors) return { success: false as const, errors: providesErrors };
 
       // Track which branch ran for rollback
       branchMap.set(result.data as object, i);
@@ -167,7 +149,13 @@ export function choice(...args: (BranchTuple | TypedStep)[]): TypedStep<StepCont
     if (branchIndex === undefined) return;
     const [, step] = innerBranches[branchIndex];
     if (step.rollback) {
-      await step.rollback(ctx, output);
+      try {
+        await step.rollback(ctx, output);
+      } catch (err) {
+        const error = new Error(`${name}: 1 rollback(s) failed`);
+        error.cause = [err instanceof Error ? err : new Error(String(err))];
+        throw error;
+      }
     }
   };
 

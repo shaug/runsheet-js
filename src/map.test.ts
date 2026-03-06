@@ -125,8 +125,8 @@ describe('map', () => {
       const result = await pipeline.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors[0]).toBeInstanceOf(RunsheetError);
-        expect((result.errors[0] as RunsheetError).code).toBe('PREDICATE');
+        expect(result.errors[0]).toBeInstanceOf(Error);
+        expect(result.errors[0].message).toBe('collection boom');
       }
     });
 
@@ -220,6 +220,27 @@ describe('map', () => {
       expect(rolledBack.sort()).toEqual([1, 3]);
     });
 
+    it('fails when inner step provides validation fails', async () => {
+      const step = defineStep({
+        name: 'badProvides',
+        requires: z.object({ value: z.number() }),
+        provides: z.object({ out: z.string() }),
+        run: async (ctx) => ({ out: ctx.value as unknown as string }), // returns number, not string
+      });
+
+      const pipeline = buildPipeline({
+        name: 'test',
+        steps: [map('results', () => [{ value: 1 }], step)],
+      });
+
+      const result = await pipeline.run({});
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.errors[0]).toBeInstanceOf(RunsheetError);
+        expect((result.errors[0] as RunsheetError).code).toBe('PROVIDES_VALIDATION');
+      }
+    });
+
     it('rolls back all items on external failure (later step fails)', async () => {
       const rolledBack: number[] = [];
 
@@ -267,6 +288,26 @@ describe('map', () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.results).toEqual([{ result: 5 }, { result: 10 }, { result: 15 }]);
+      }
+    });
+
+    it('handles non-object items gracefully (spread is a no-op for primitives)', async () => {
+      const step = defineStep({
+        name: 'identity',
+        run: async (ctx) => ({ value: ctx.value ?? 'default' }),
+      });
+
+      const pipeline = buildPipeline({
+        name: 'test',
+        steps: [map('results', () => [42, 'hello'] as unknown as Record<string, unknown>[], step)],
+      });
+
+      // Spreading a primitive into an object is a no-op ({ ...ctx, ...42 } === { ...ctx })
+      // The step should still execute successfully
+      const result = await pipeline.run({ value: 'from-ctx' });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.results).toHaveLength(2);
       }
     });
   });

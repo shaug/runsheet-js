@@ -1,6 +1,5 @@
 import type { ExtractProvides, Step, StepContext, StepOutput, TypedStep } from './types.js';
-import { validateInnerSchema } from './internal.js';
-import { RunsheetError } from './errors.js';
+import { runInnerStep } from './internal.js';
 
 // ---------------------------------------------------------------------------
 // Runtime step detection
@@ -82,19 +81,21 @@ export function map(
   const name = stepMode ? `map(${key}, ${(fnOrStep as Step).name})` : `map(${key})`;
 
   // Track per-execution data for rollback (step mode only).
-  // Keyed by the output object — safe for concurrent pipeline.run() calls.
+  // INVARIANT: This relies on pipeline.ts storing the exact result.data
+  // reference in its outputs array (pipeline.ts:344-345). If the pipeline
+  // ever clones result.data, this WeakMap lookup will silently fail.
   const executionMap = new WeakMap<object, { items: unknown[]; ctx: StepContext }>();
 
   const run: Step['run'] = async (ctx) => {
-    // Extract collection
+    // Extract collection — selector errors are application errors, not library errors
     let items: unknown[];
     try {
       items = collection(ctx);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      const error = new RunsheetError('PREDICATE', `${name} collection: ${message}`);
-      if (err instanceof Error) error.cause = err;
-      return { success: false as const, errors: [error] };
+      return {
+        success: false as const,
+        errors: [err instanceof Error ? err : new Error(String(err))],
+      };
     }
 
     if (stepMode) {
@@ -160,30 +161,7 @@ async function runStepMode(
   const settled = await Promise.allSettled(
     items.map(async (item) => {
       const itemCtx = { ...ctx, ...(item as StepContext) };
-
-      // Validate requires
-      const reqErrors = validateInnerSchema(
-        step.requires,
-        itemCtx,
-        `${step.name} requires`,
-        'REQUIRES_VALIDATION',
-      );
-      if (reqErrors) return { success: false as const, errors: reqErrors };
-
-      // Run step
-      const result = await step.run(itemCtx);
-      if (!result.success) return result;
-
-      // Validate provides
-      const provErrors = validateInnerSchema(
-        step.provides,
-        result.data,
-        `${step.name} provides`,
-        'PROVIDES_VALIDATION',
-      );
-      if (provErrors) return { success: false as const, errors: provErrors };
-
-      return result;
+      return runInnerStep(step, itemCtx);
     }),
   );
 
@@ -213,13 +191,7 @@ async function runStepMode(
         }
       }
     }
-    return {
-      success: false as const,
-      errors:
-        allErrors.length === 1
-          ? allErrors
-          : [new Error(`${name}: ${allErrors.length} item(s) failed`, { cause: allErrors })],
-    };
+    return { success: false as const, errors: allErrors };
   }
 
   // Collect results in original order

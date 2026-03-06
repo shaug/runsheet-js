@@ -8,7 +8,7 @@ import type {
   UnionToIntersection,
 } from './types.js';
 import type { AsContext } from './internal.js';
-import { validateInnerSchema } from './internal.js';
+import { runInnerStep } from './internal.js';
 import { RunsheetError } from './errors.js';
 import { isConditionalStep } from './when.js';
 
@@ -24,7 +24,7 @@ type InnerResult = {
 };
 
 // ---------------------------------------------------------------------------
-// Execute a single inner step
+// Execute a single inner step (with conditional check)
 // ---------------------------------------------------------------------------
 
 async function executeInner(step: Step, ctx: Readonly<StepContext>): Promise<InnerResult> {
@@ -40,28 +40,8 @@ async function executeInner(step: Step, ctx: Readonly<StepContext>): Promise<Inn
     return { step, skipped: false, errors: [error] };
   }
 
-  // Validate requires
-  const requiresErrors = validateInnerSchema(
-    step.requires,
-    ctx,
-    `${step.name} requires`,
-    'REQUIRES_VALIDATION',
-  );
-  if (requiresErrors) return { step, skipped: false, errors: requiresErrors };
-
-  // Run step (composable() wrapper inside defineStep catches throws)
-  const result = await step.run(ctx);
+  const result = await runInnerStep(step, ctx);
   if (!result.success) return { step, skipped: false, errors: [...result.errors] };
-
-  // Validate provides
-  const providesErrors = validateInnerSchema(
-    step.provides,
-    result.data,
-    `${step.name} provides`,
-    'PROVIDES_VALIDATION',
-  );
-  if (providesErrors) return { step, skipped: false, errors: providesErrors };
-
   return { step, skipped: false, output: result.data };
 }
 

@@ -255,6 +255,26 @@ describe('choice', () => {
       }
     });
 
+    it('fails when inner step provides validation fails', async () => {
+      const badProvides = defineStep({
+        name: 'badProvides',
+        provides: z.object({ chargeId: z.string() }),
+        run: async () => ({ chargeId: 123 as unknown as string }), // wrong type
+      });
+
+      const pipeline = buildPipeline({
+        name: 'test',
+        steps: [choice([() => true, badProvides])],
+      });
+
+      const result = await pipeline.run({});
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.errors[0]).toBeInstanceOf(RunsheetError);
+        expect((result.errors[0] as RunsheetError).code).toBe('PROVIDES_VALIDATION');
+      }
+    });
+
     it('propagates inner step failure', async () => {
       const failing = defineStep({
         name: 'failing',
