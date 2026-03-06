@@ -231,6 +231,48 @@ describe('parallel', () => {
       expect(rolledBack).toEqual(['B', 'A']);
     });
 
+    it('does not roll back skipped conditional steps on outer failure', async () => {
+      const rolledBack: string[] = [];
+
+      const skipped = when(
+        () => false,
+        defineStep({
+          name: 'skipped',
+          provides: z.object({ x: z.number() }),
+          run: async () => ({ x: 1 }),
+          rollback: async () => {
+            rolledBack.push('skipped');
+          },
+        }),
+      );
+
+      const ran = defineStep({
+        name: 'ran',
+        provides: z.object({ y: z.number() }),
+        run: async () => ({ y: 2 }),
+        rollback: async () => {
+          rolledBack.push('ran');
+        },
+      });
+
+      const laterFails = defineStep({
+        name: 'laterFails',
+        run: async () => {
+          throw new Error('later fail');
+        },
+      });
+
+      const p = pipeline({
+        name: 'test',
+        steps: [parallel(skipped, ran), laterFails],
+      });
+
+      const result = await p.run({});
+      expect(result.success).toBe(false);
+      // Only 'ran' should be rolled back, not 'skipped'
+      expect(rolledBack).toEqual(['ran']);
+    });
+
     it('handles inner rollback errors (best-effort)', async () => {
       const rolledBack: string[] = [];
 

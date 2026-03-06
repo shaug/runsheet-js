@@ -100,9 +100,8 @@ foundation with its own `StepResult` semantics and error handling.
 
 8. **Conditional step rollback: skipped steps don't exist.** Skipped steps
    produce no snapshot and no rollback entry. The snapshot array is indexed by
-   executed steps, not declared steps. The pipeline result tracks which steps
-   were skipped (for debugging/logging) but they're invisible to the rollback
-   loop.
+   executed steps, not declared steps. Skipped steps simply don't appear in
+   `stepsExecuted` — there is no separate tracking.
 
 9. **Context immutability: always freeze.** Always `Object.freeze`, always
    `Readonly<T>` types. Shallow freeze is one call per step — negligible cost

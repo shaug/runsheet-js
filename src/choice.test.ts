@@ -377,6 +377,22 @@ describe('choice', () => {
       expect(result.meta.stepsExecuted).toEqual(['choice(chargeCard)']);
     });
 
+    it('includes failed branch in stepsExecuted', async () => {
+      const failing = defineStep({
+        name: 'failingBranch',
+        run: async () => {
+          throw new Error('branch boom');
+        },
+      });
+
+      const ch = choice([() => true, failing]);
+      const result = await ch.run({});
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.meta.stepsExecuted).toContain('failingBranch');
+      }
+    });
+
     it('reports matched branch in its own aggregate meta', async () => {
       const ch = choice(
         [(ctx) => ctx.method === 'card', chargeCard],

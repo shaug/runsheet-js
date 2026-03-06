@@ -6,7 +6,14 @@ import type {
   StepResult,
   TypedStep,
 } from './types.js';
-import { toError, baseMeta, stepSuccess, stepFailure } from './internal.js';
+import {
+  toError,
+  baseMeta,
+  stepSuccess,
+  stepFailure,
+  collapseErrors,
+  createStepObject,
+} from './internal.js';
 import { RollbackError } from './errors.js';
 
 // ---------------------------------------------------------------------------
@@ -135,21 +142,15 @@ export function map(
           }
         }
         if (errors.length > 0) {
-          const error = new RollbackError(`${name}: ${errors.length} rollback(s) failed`);
-          error.cause = errors;
-          throw error;
+          throw new RollbackError(`${name}: ${errors.length} rollback(s) failed`, errors);
         }
       }
     : undefined;
 
-  return Object.freeze({
+  return createStepObject({
     name,
-    requires: undefined,
-    provides: undefined,
     run: run as Step['run'],
     rollback,
-    retry: undefined,
-    timeout: undefined,
   }) as unknown as TypedStep<StepContext, StepContext>;
 }
 
@@ -199,11 +200,11 @@ async function runStepMode(
         }
       }
     }
-    const error =
-      allErrors.length === 1
-        ? allErrors[0]
-        : new AggregateError(allErrors, `${name}: ${allErrors.length} item(s) failed`);
-    return stepFailure(error, meta, name);
+    return stepFailure(
+      collapseErrors(allErrors, `${name}: ${allErrors.length} item(s) failed`),
+      meta,
+      name,
+    );
   }
 
   // Collect results in original order
@@ -239,11 +240,11 @@ async function runFunctionMode(
   }
 
   if (allErrors.length > 0) {
-    const error =
-      allErrors.length === 1
-        ? allErrors[0]
-        : new AggregateError(allErrors, `${stepName}: ${allErrors.length} item(s) failed`);
-    return stepFailure(error, meta, stepName);
+    return stepFailure(
+      collapseErrors(allErrors, `${stepName}: ${allErrors.length} item(s) failed`),
+      meta,
+      stepName,
+    );
   }
 
   const data: StepOutput = { [key]: results };

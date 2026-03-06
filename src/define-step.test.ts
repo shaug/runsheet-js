@@ -235,6 +235,32 @@ describe('defineStep', () => {
       }
     });
 
+    it('attaches all attempt errors as cause on RetryExhaustedError', async () => {
+      let attempts = 0;
+      const step = defineStep({
+        name: 'always-fails',
+        retry: { count: 2 },
+        run: async () => {
+          attempts++;
+          throw new Error(`attempt ${attempts}`);
+        },
+      });
+
+      const p = pipeline({ name: 'test', steps: [step] });
+      const result = await p.run({});
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBeInstanceOf(RunsheetError);
+        expect((result.error as RunsheetError).code).toBe('RETRY_EXHAUSTED');
+        const cause = result.error.cause as Error[];
+        expect(Array.isArray(cause)).toBe(true);
+        expect(cause).toHaveLength(3); // 1 initial + 2 retries
+        expect(cause[0].message).toBe('attempt 1');
+        expect(cause[1].message).toBe('attempt 2');
+        expect(cause[2].message).toBe('attempt 3');
+      }
+    });
+
     it('respects retryIf predicate', async () => {
       let attempts = 0;
 

@@ -13,17 +13,14 @@ import {
   TimeoutError,
   RetryExhaustedError,
 } from './errors.js';
-import { toError, baseMeta, stepSuccess, stepFailure } from './internal.js';
-
-// ---------------------------------------------------------------------------
-// Validation helpers
-// ---------------------------------------------------------------------------
-
-function formatIssues(
-  issues: readonly { path: readonly (string | number)[]; message: string }[],
-): string {
-  return issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ');
-}
+import {
+  toError,
+  baseMeta,
+  stepSuccess,
+  stepFailure,
+  formatIssues,
+  createStepObject,
+} from './internal.js';
 
 // ---------------------------------------------------------------------------
 // Timeout and retry wrappers
@@ -89,10 +86,12 @@ function withRetry<T>(
       }
     }
 
-    throw new RetryExhaustedError(
+    const error = new RetryExhaustedError(
       `${stepName} failed after ${policy.count} retries`,
       policy.count + 1,
     );
+    error.cause = errors;
+    throw error;
   };
 }
 
@@ -195,17 +194,17 @@ export function defineStep<Requires extends StepContext, Provides extends StepCo
     return stepSuccess(data as unknown as StepOutput, meta);
   };
 
-  return Object.freeze({
+  return createStepObject({
     name: config.name,
-    requires: config.requires ?? undefined,
-    provides: config.provides ?? undefined,
+    requires: config.requires,
+    provides: config.provides,
     run: run as unknown as Step['run'],
     rollback: config.rollback
       ? async (ctx: Readonly<StepContext>, output: Readonly<StepContext>) => {
           await config.rollback!(ctx as Readonly<Requires>, output as Readonly<Provides>);
         }
       : undefined,
-    retry: config.retry ?? undefined,
-    timeout: config.timeout ?? undefined,
+    retry: config.retry,
+    timeout: config.timeout,
   }) as TypedStep<Requires, Provides>;
 }

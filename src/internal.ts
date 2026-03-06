@@ -3,6 +3,7 @@ import type {
   AggregateMeta,
   AggregateSuccess,
   RollbackReport,
+  Step,
   StepContext,
   StepMeta,
   StepFailure,
@@ -22,9 +23,53 @@ export function toError(err: unknown): Error {
 
 /** Empty rollback report for single-step failures. */
 export const EMPTY_ROLLBACK: RollbackReport = Object.freeze({
-  completed: [] as string[],
-  failed: [] as never[],
+  completed: Object.freeze([] as string[]),
+  failed: Object.freeze([] as never[]),
 });
+
+/** Format schema validation issues into a human-readable string. */
+export function formatIssues(
+  issues: readonly { path: readonly (string | number)[]; message: string }[],
+): string {
+  return issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ');
+}
+
+/**
+ * Collapse an array of errors into a single error.
+ *
+ * Returns the sole error when there is exactly one, otherwise wraps
+ * them in an `AggregateError` with the given message.
+ */
+export function collapseErrors(errors: Error[], message: string): Error {
+  return errors.length === 1 ? errors[0] : new AggregateError(errors, message);
+}
+
+/**
+ * Create a frozen {@link Step} object with `undefined` defaults for
+ * omitted optional fields.
+ *
+ * Centralises the construction so that if `Step` gains new properties,
+ * only this helper needs updating.
+ */
+export function createStepObject(fields: {
+  name: string;
+  run: Step['run'];
+  rollback?: Step['rollback'];
+  requires?: Step['requires'];
+  provides?: Step['provides'];
+  retry?: Step['retry'];
+  timeout?: Step['timeout'];
+}): Step {
+  return Object.freeze({
+    name: fields.name,
+    requires: fields.requires ?? undefined,
+    provides: fields.provides ?? undefined,
+    run: fields.run,
+    rollback: fields.rollback ?? undefined,
+    retry: fields.retry ?? undefined,
+    timeout: fields.timeout ?? undefined,
+  });
+}
 
 /**
  * Create a {@link StepMeta} for a step execution.

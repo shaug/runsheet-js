@@ -143,8 +143,13 @@ export class UnknownError extends RunsheetError {
 
 /** One or more rollback handlers failed in a combinator. */
 export class RollbackError extends RunsheetError {
-  constructor(message: string) {
+  /** The individual errors from each failed rollback handler. */
+  readonly causes: readonly Error[];
+
+  constructor(message: string, causes: readonly Error[] = []) {
     super('ROLLBACK', message);
     this.name = 'RollbackError';
+    this.causes = causes;
+    this.cause = causes.length === 1 ? causes[0] : new AggregateError(causes, message);
   }
 }

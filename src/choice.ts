@@ -9,7 +9,13 @@ import type {
   UnionToIntersection,
 } from './types.js';
 import type { AsContext } from './internal.js';
-import { toError, aggregateMeta, aggregateSuccess, aggregateFailure } from './internal.js';
+import {
+  toError,
+  aggregateMeta,
+  aggregateSuccess,
+  aggregateFailure,
+  createStepObject,
+} from './internal.js';
 import { ChoiceNoMatchError, PredicateError, RollbackError } from './errors.js';
 
 /** A [predicate, step] tuple used by {@link choice}. */
@@ -134,7 +140,7 @@ export function choice(...args: (BranchTuple | Step)[]): AggregateStep<StepConte
 
       const result = await step.run(frozenCtx);
       if (!result.success) {
-        const meta = aggregateMeta(name, frozenCtx, []);
+        const meta = aggregateMeta(name, frozenCtx, [step.name]);
         return aggregateFailure(result.error, meta, name);
       }
 
@@ -159,20 +165,14 @@ export function choice(...args: (BranchTuple | Step)[]): AggregateStep<StepConte
       try {
         await step.rollback(ctx, output);
       } catch (err) {
-        const error = new RollbackError(`${name}: 1 rollback(s) failed`);
-        error.cause = [toError(err)];
-        throw error;
+        throw new RollbackError(`${name}: 1 rollback(s) failed`, [toError(err)]);
       }
     }
   };
 
-  return Object.freeze({
+  return createStepObject({
     name,
-    requires: undefined,
-    provides: undefined,
     run,
     rollback,
-    retry: undefined,
-    timeout: undefined,
   }) as unknown as AggregateStep<StepContext, StepContext>;
 }

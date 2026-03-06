@@ -1,5 +1,12 @@
 import type { Step, StepContext, StepOutput, StepResult, TypedStep } from './types.js';
-import { toError, baseMeta, stepSuccess, stepFailure } from './internal.js';
+import {
+  toError,
+  baseMeta,
+  stepSuccess,
+  stepFailure,
+  collapseErrors,
+  createStepObject,
+} from './internal.js';
 
 // ---------------------------------------------------------------------------
 // filter()
@@ -74,14 +81,9 @@ export function filter<K extends string, Item>(
     );
   };
 
-  return Object.freeze({
+  return createStepObject({
     name,
-    requires: undefined,
-    provides: undefined,
     run: run as Step['run'],
-    rollback: undefined,
-    retry: undefined,
-    timeout: undefined,
   }) as unknown as TypedStep<StepContext, Record<K, Item[]>>;
 }
 
@@ -112,11 +114,11 @@ async function runFilter(
   }
 
   if (allErrors.length > 0) {
-    const error =
-      allErrors.length === 1
-        ? allErrors[0]
-        : new AggregateError(allErrors, `${name}: ${allErrors.length} predicate(s) failed`);
-    return stepFailure(error, meta, name);
+    return stepFailure(
+      collapseErrors(allErrors, `${name}: ${allErrors.length} predicate(s) failed`),
+      meta,
+      name,
+    );
   }
 
   const data: StepOutput = { [key]: results };

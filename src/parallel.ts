@@ -9,7 +9,14 @@ import type {
   UnionToIntersection,
 } from './types.js';
 import type { AsContext } from './internal.js';
-import { toError, aggregateMeta, aggregateSuccess, aggregateFailure } from './internal.js';
+import {
+  toError,
+  aggregateMeta,
+  aggregateSuccess,
+  aggregateFailure,
+  collapseErrors,
+  createStepObject,
+} from './internal.js';
 import { PredicateError, RollbackError } from './errors.js';
 import { isConditionalStep } from './when.js';
 
@@ -133,10 +140,7 @@ export function parallel<S extends readonly Step[]>(
           }
         }
       }
-      const error =
-        allErrors.length === 1
-          ? allErrors[0]
-          : new AggregateError(allErrors, `${name}: ${allErrors.length} step(s) failed`);
+      const error = collapseErrors(allErrors, `${name}: ${allErrors.length} step(s) failed`);
       const meta = aggregateMeta(name, frozenCtx, executed);
       return aggregateFailure(error, meta, name);
     }
@@ -147,40 +151,63 @@ export function parallel<S extends readonly Step[]>(
       Object.assign(merged, output);
     }
 
+    // Track which inner steps executed and their individual outputs
+    // for outer rollback. Individual outputs are needed so that nested
+    // pipeline rollback handlers can look up their per-execution state.
+    executedMap.set(
+      merged,
+      succeeded.map((s) => ({ step: s.step, output: s.output })),
+    );
+
     const meta = aggregateMeta(name, frozenCtx, executed);
     return aggregateSuccess(merged, meta);
   };
 
+  // Track which inner steps ran per execution for outer rollback.
+  // INVARIANT: This relies on pipeline.ts storing the exact result.data
+  // reference in its outputs array. If the pipeline ever clones
+  // result.data, this WeakMap lookup will silently fail.
+  type ExecutedEntry = { step: Step; output: StepOutput };
+  const executedMap = new WeakMap<object, ExecutedEntry[]>();
+
   // ----- rollback: called when a later sequential step fails ----- //
-  // The pipeline passes the merged output. Each inner step's rollback
-  // receives the full merged output (a superset of what it produced).
-  // This is safe because rollback handlers only read their own keys.
+  // The pipeline passes the merged output. Only inner steps that
+  // actually executed are rolled back, and each receives its own
+  // individual output (not the merged superset).
   const rollback: NonNullable<Step['rollback']> = async (ctx, mergedOutput) => {
+    const entries = executedMap.get(mergedOutput);
     const errors: Error[] = [];
-    for (let i = innerSteps.length - 1; i >= 0; i--) {
-      const step = innerSteps[i];
-      if (!step.rollback) continue;
-      try {
-        await step.rollback(ctx, mergedOutput);
-      } catch (err) {
-        errors.push(toError(err));
+    if (entries) {
+      for (let i = entries.length - 1; i >= 0; i--) {
+        const { step, output } = entries[i];
+        if (!step.rollback) continue;
+        try {
+          await step.rollback(ctx, output);
+        } catch (err) {
+          errors.push(toError(err));
+        }
+      }
+    } else {
+      // Fallback: no tracking available (shouldn't happen)
+      for (let i = innerSteps.length - 1; i >= 0; i--) {
+        const step = innerSteps[i];
+        if (!step.rollback) continue;
+        try {
+          await step.rollback(ctx, mergedOutput);
+        } catch (err) {
+          errors.push(toError(err));
+        }
       }
     }
     if (errors.length > 0) {
-      const error = new RollbackError(`${name}: ${errors.length} rollback(s) failed`);
-      error.cause = errors;
-      throw error;
+      throw new RollbackError(`${name}: ${errors.length} rollback(s) failed`, errors);
     }
   };
 
-  return Object.freeze({
+  return createStepObject({
     name,
-    requires: undefined,
-    provides: undefined,
     run,
     rollback,
-    retry: undefined,
-    timeout: undefined,
   }) as unknown as AggregateStep<
     AsContext<UnionToIntersection<ExtractRequires<S[number]>>>,
     AsContext<UnionToIntersection<ExtractProvides<S[number]>>>

@@ -1,6 +1,6 @@
 import { describe, expect, it, assertType } from 'vitest';
 import { z } from 'zod';
-import { defineStep, pipeline, RunsheetError } from './index.js';
+import { defineStep, pipeline, parallel, RunsheetError } from './index.js';
 import type { StepResult } from './index.js';
 
 describe('pipeline', () => {
@@ -451,6 +451,53 @@ describe('pipeline', () => {
         expect(result.meta.name).toBe('outer');
         expect(result.meta.stepsExecuted).toEqual(['inner', 'stepD']);
       }
+    });
+
+    it('handles reentrancy — parallel pipelines roll back independently', async () => {
+      const rolledBack: string[] = [];
+
+      const a = defineStep({
+        name: 'a',
+        provides: z.object({ a: z.number() }),
+        run: async () => ({ a: 1 }),
+        rollback: async () => {
+          rolledBack.push('a');
+        },
+      });
+
+      const b = defineStep({
+        name: 'b',
+        provides: z.object({ b: z.number() }),
+        run: async () => ({ b: 2 }),
+        rollback: async () => {
+          rolledBack.push('b');
+        },
+      });
+
+      const inner = pipeline({
+        name: 'inner',
+        steps: [a, b],
+      });
+
+      // Run two instances of the same pipeline step in parallel,
+      // then trigger rollback. Both instances should roll back.
+      const fails = defineStep({
+        name: 'fails',
+        run: async () => {
+          throw new Error('outer fail');
+        },
+      });
+
+      const outer = pipeline({
+        name: 'outer',
+        steps: [parallel(inner, inner), fails],
+      });
+
+      const result = await outer.run({});
+      expect(result.success).toBe(false);
+      // Both parallel instances should have their inner steps rolled back
+      // (b then a for each instance = 4 total rollbacks)
+      expect(rolledBack).toEqual(['b', 'a', 'b', 'a']);
     });
 
     it('rolls back inner pipeline steps when a later outer step fails', async () => {

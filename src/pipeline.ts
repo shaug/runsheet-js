@@ -14,7 +14,14 @@ import type {
 import type { StepMiddleware } from './middleware.js';
 import { applyMiddleware } from './middleware.js';
 import { ArgsValidationError, PredicateError, StrictOverlapError } from './errors.js';
-import { toError, aggregateMeta, aggregateSuccess, aggregateFailure } from './internal.js';
+import {
+  toError,
+  aggregateMeta,
+  aggregateSuccess,
+  aggregateFailure,
+  formatIssues,
+  createStepObject,
+} from './internal.js';
 import { isConditionalStep } from './when.js';
 
 // ---------------------------------------------------------------------------
@@ -158,8 +165,9 @@ async function executePipeline(
   if (config.argsSchema) {
     const parsed = config.argsSchema.safeParse(frozenArgs);
     if (!parsed.success) {
-      const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ');
-      const error = new ArgsValidationError(`${config.name} args: ${issues}`);
+      const error = new ArgsValidationError(
+        `${config.name} args: ${formatIssues(parsed.error.issues)}`,
+      );
       const meta = aggregateMeta(config.name, frozenArgs, []);
       const state = createExecutionState(frozenArgs);
       return { result: aggregateFailure(error, meta, config.name), state };
@@ -237,8 +245,7 @@ async function executePipeline(
  * composition.
  *
  * The `run()` method returns an {@link AggregateResult} which extends
- * {@link StepResult} with orchestration metadata (`stepsExecuted`,
- * `stepsExecuted`).
+ * {@link StepResult} with orchestration metadata (`stepsExecuted`).
  *
  * @example
  * ```ts
@@ -279,36 +286,32 @@ export function pipeline<Args extends StepContext = StepContext, S extends Step 
 
   const pipelineConfig: PipelineConfig = config as PipelineConfig;
 
-  // Captured execution state for rollback when used as a nested step.
-  // When this pipeline succeeds as part of an outer pipeline, a later
-  // outer step failure can trigger rollback of this pipeline's inner
-  // steps via the rollback handler below.
-  let capturedState: ExecutionState | null = null;
+  // Track per-execution state for rollback when used as a nested step.
+  // INVARIANT: This relies on pipeline.ts storing the exact result.data
+  // reference in its outputs array. If the pipeline ever clones
+  // result.data, this WeakMap lookup will silently fail.
+  const stateMap = new WeakMap<object, ExecutionState>();
 
   const run = async (ctx: Readonly<StepContext>): Promise<AggregateResult<StepOutput>> => {
-    capturedState = null;
     const outcome = await executePipeline(pipelineConfig, ctx as StepContext);
     if (outcome.result.success) {
-      capturedState = outcome.state;
+      stateMap.set(outcome.result.data, outcome.state);
     }
     return outcome.result;
   };
 
-  const rollback = async (): Promise<void> => {
-    if (capturedState) {
-      const state = capturedState;
-      capturedState = null;
+  const rollback = async (_ctx: Readonly<StepContext>, output: Readonly<StepOutput>) => {
+    const state = stateMap.get(output);
+    if (state) {
+      stateMap.delete(output);
       await executeRollback(state.executed);
     }
   };
 
-  return Object.freeze({
+  return createStepObject({
     name: config.name,
-    requires: config.argsSchema ?? undefined,
-    provides: undefined,
+    requires: config.argsSchema,
     run,
     rollback,
-    retry: undefined,
-    timeout: undefined,
   }) as unknown as AggregateStep<Args, Args & UnionToIntersection<ExtractProvides<S>>>;
 }
