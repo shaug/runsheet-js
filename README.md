@@ -170,13 +170,13 @@ For complex pipelines, the builder gives progressive type narrowing — each
 `.step()` call extends the known context type:
 
 ```typescript
-import { createPipeline } from 'runsheet';
+import { pipeline } from 'runsheet';
 import { z } from 'zod';
 
-const placeOrder = createPipeline(
-  'placeOrder',
-  z.object({ orderId: z.string() }),
-)
+const placeOrder = pipeline({
+  name: 'placeOrder',
+  argsSchema: z.object({ orderId: z.string() }),
+})
   .step(validateOrder) // context now includes order
   .step(chargePayment) // context now includes chargeId
   .step(sendConfirmation) // context now includes sentAt
@@ -186,7 +186,7 @@ const placeOrder = createPipeline(
 Type-only args (no runtime validation of pipeline input):
 
 ```typescript
-const placeOrder = createPipeline<{ orderId: string }>('placeOrder')
+const placeOrder = pipeline<{ orderId: string }>({ name: 'placeOrder' })
   .step(validateOrder)
   .step(chargePayment)
   .step(sendConfirmation)
@@ -259,7 +259,7 @@ const placeOrder = pipeline({
 Middleware with the builder:
 
 ```typescript
-const placeOrder = createPipeline<{ orderId: string }>('placeOrder')
+const placeOrder = pipeline<{ orderId: string }>({ name: 'placeOrder' })
   .use(logging, timing)
   .step(validateOrder)
   .step(chargePayment)
@@ -339,16 +339,16 @@ const chargePayment = defineStep({
   },
 });
 
-const pipeline = createPipeline<{
+const placeOrder = pipeline<{
   orderId: string;
   stripe: Stripe;
   db: Database;
-}>('placeOrder')
+}>({ name: 'placeOrder' })
   .step(validateOrder)
   .step(chargePayment)
   .build();
 
-await pipeline.run({
+await placeOrder.run({
   orderId: '123',
   stripe: stripeClient,
   db: dbClient,
@@ -563,34 +563,17 @@ schemas or generics you provide.
 
 ### `pipeline(config)`
 
-Build a pipeline from an array of steps. Returns an `AggregateStep` whose
-`run()` returns an `AggregateResult` — `data` is the intersection of all step
-output types, `meta` includes `stepsExecuted`.
+Create a pipeline. When `steps` is provided, returns an `AggregateStep`
+immediately. When `steps` is omitted, returns a `PipelineBuilder` with
+`.step()`, `.use()`, and `.build()` for progressive type narrowing.
 
 | Option       | Type               | Description                                                       |
 | ------------ | ------------------ | ----------------------------------------------------------------- |
 | `name`       | `string`           | Pipeline name                                                     |
-| `steps`      | `Step[]`           | Steps to execute in order                                         |
+| `steps`      | `Step[]`           | Steps to execute in order (omit for builder mode)                 |
 | `middleware` | `StepMiddleware[]` | Optional middleware                                               |
 | `argsSchema` | `ZodSchema`        | Optional schema for pipeline input validation                     |
 | `strict`     | `boolean`          | Optional — throws at build time if two steps provide the same key |
-
-### `createPipeline(name, argsSchema?, options?)`
-
-Start a fluent pipeline builder. Returns a `PipelineBuilder` with:
-
-- `.step(step)` — add a step
-- `.use(...middleware)` — add middleware
-- `.build()` — produce the pipeline
-
-The second argument accepts a schema (for runtime args validation) or an options
-object:
-
-```typescript
-createPipeline('order', z.object({ id: z.string() }));
-createPipeline('order', { strict: true });
-createPipeline('order', z.object({ id: z.string() }), { strict: true });
-```
 
 ### `parallel(...steps)`
 

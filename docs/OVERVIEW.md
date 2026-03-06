@@ -179,14 +179,17 @@ return { completed, failed }
 
 ### How pipeline composition works
 
-`pipeline()` returns an `AggregateStep` with a closure-captured execution state.
-When used as a step in an outer pipeline:
+`pipeline()` returns an `AggregateStep` backed by a `WeakMap` that associates
+each successful result's `data` object with the execution state that produced
+it. When used as a step in an outer pipeline:
 
 - The inner pipeline's `run` executes all its steps and returns a `StepResult`.
-- On success, the inner pipeline captures its execution state for potential
-  rollback.
-- If a later outer step fails, the inner pipeline's rollback handler re-walks
-  its captured state and rolls back inner steps in reverse order.
+- On success, the execution state is stored in a `WeakMap` keyed on the
+  `result.data` reference. This makes pipelines reentrant — multiple concurrent
+  executions each track their own state independently.
+- If a later outer step fails, the inner pipeline's rollback handler looks up
+  the execution state via the output reference and rolls back inner steps in
+  reverse order.
 - From the outer pipeline's perspective, the inner pipeline is a single atomic
   step — its internal structure is opaque.
 

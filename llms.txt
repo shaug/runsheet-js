@@ -175,14 +175,18 @@ const outer = pipeline({ name: 'outer', steps: [inner, c, d] });
 
 If a later outer step fails, the inner pipeline's steps are rolled back.
 
-### createPipeline (builder API)
+### Builder API
 
-Fluent builder with progressive type narrowing.
+Omit `steps` from the config to get a fluent builder with progressive type
+narrowing.
 
 ```typescript
-import { createPipeline } from 'runsheet';
+import { pipeline } from 'runsheet';
 
-const pipeline = createPipeline('checkout', z.object({ userId: z.string() }))
+const checkout = pipeline({
+  name: 'checkout',
+  argsSchema: z.object({ userId: z.string() }),
+})
   .step(fetchUser)
   .step(chargePayment)
   .step(sendEmail)
@@ -192,7 +196,7 @@ const pipeline = createPipeline('checkout', z.object({ userId: z.string() }))
 Type-only args (no runtime validation of pipeline input):
 
 ```typescript
-const pipeline = createPipeline<{ userId: string }>('checkout')
+const checkout = pipeline<{ userId: string }>({ name: 'checkout' })
   .step(fetchUser)
   .build();
 ```
@@ -200,13 +204,17 @@ const pipeline = createPipeline<{ userId: string }>('checkout')
 Strict mode via the builder:
 
 ```typescript
-createPipeline('checkout', { strict: true })
+pipeline({ name: 'checkout', strict: true })
   .step(fetchUser)
   .step(chargePayment)
   .build();
 
 // Or with a schema:
-createPipeline('checkout', z.object({ userId: z.string() }), { strict: true })
+pipeline({
+  name: 'checkout',
+  argsSchema: z.object({ userId: z.string() }),
+  strict: true,
+})
   .step(fetchUser)
   .step(chargePayment)
   .build();
@@ -339,16 +347,16 @@ Pass dependencies as pipeline args — they're available to every step through t
 accumulated context without any step needing to provides them:
 
 ```typescript
-const pipeline = createPipeline<{
+const placeOrder = pipeline<{
   orderId: string;
   stripe: Stripe;
   db: Database;
-}>('placeOrder')
+}>({ name: 'placeOrder' })
   .step(validateOrder)
   .step(chargePayment)
   .build();
 
-await pipeline.run({
+await placeOrder.run({
   orderId: '123',
   stripe: stripeClient,
   db: dbClient,
@@ -397,7 +405,7 @@ const p = pipeline({
 });
 
 // Or with the builder:
-createPipeline('checkout')
+pipeline({ name: 'checkout' })
   .use(timing)
   .step(fetchUser)
   .step(chargePayment)
@@ -450,16 +458,16 @@ Application errors (thrown from step run functions) pass through as-is.
 
 ## Key exports
 
-Functions: defineStep, pipeline, createPipeline, when, parallel, choice, map,
-flatMap, filter Classes: RunsheetError, RequiresValidationError,
-ProvidesValidationError, ArgsValidationError, PredicateError, TimeoutError,
-RetryExhaustedError, StrictOverlapError, ChoiceNoMatchError, RollbackError,
-UnknownError Types: Step, TypedStep, AggregateStep, StepConfig, StepContext,
-StepOutput, StepSchema, RetryPolicy, StepResult, StepSuccess, StepFailure,
-StepMeta, AggregateResult, AggregateSuccess, AggregateFailure, AggregateMeta,
-RollbackReport, RollbackFailure, PipelineBuilder, PipelineConfig,
-StepMiddleware, StepInfo, StepExecutor, ConditionalStep, RunsheetErrorCode,
-ExtractRequires, ExtractProvides
+Functions: defineStep, pipeline, when, parallel, choice, map, flatMap, filter
+Classes: RunsheetError, RequiresValidationError, ProvidesValidationError,
+ArgsValidationError, PredicateError, TimeoutError, RetryExhaustedError,
+StrictOverlapError, ChoiceNoMatchError, RollbackError, UnknownError Types: Step,
+TypedStep, AggregateStep, StepConfig, StepContext, StepOutput, StepSchema,
+RetryPolicy, StepResult, StepSuccess, StepFailure, StepMeta, AggregateResult,
+AggregateSuccess, AggregateFailure, AggregateMeta, RollbackReport,
+RollbackFailure, PipelineBuilder, PipelineConfig, StepMiddleware, StepInfo,
+StepExecutor, ConditionalStep, RunsheetErrorCode, ExtractRequires,
+ExtractProvides
 
 ## Important patterns
 
