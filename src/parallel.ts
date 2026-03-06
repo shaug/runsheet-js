@@ -167,6 +167,8 @@ export function parallel<S extends readonly Step[]>(
   // INVARIANT: This relies on pipeline.ts storing the exact result.data
   // reference in its outputs array. If the pipeline ever clones
   // result.data, this WeakMap lookup will silently fail.
+  // Exercised by parallel.test.ts ("rolls back all inner steps when
+  // a later sequential step fails").
   type ExecutedEntry = { step: Step; output: StepOutput };
   const executedMap = new WeakMap<object, ExecutedEntry[]>();
 
@@ -174,29 +176,21 @@ export function parallel<S extends readonly Step[]>(
   // The pipeline passes the merged output. Only inner steps that
   // actually executed are rolled back, and each receives its own
   // individual output (not the merged superset).
+  // Rollback is called by the outer pipeline when a later step fails.
+  // The thrown RollbackError is intentional — the pipeline's own
+  // executeRollback loop catches it and records it in result.rollback.failed.
   const rollback: NonNullable<Step['rollback']> = async (ctx, mergedOutput) => {
     const entries = executedMap.get(mergedOutput);
+    if (!entries) return;
+    executedMap.delete(mergedOutput);
     const errors: Error[] = [];
-    if (entries) {
-      for (let i = entries.length - 1; i >= 0; i--) {
-        const { step, output } = entries[i];
-        if (!step.rollback) continue;
-        try {
-          await step.rollback(ctx, output);
-        } catch (err) {
-          errors.push(toError(err));
-        }
-      }
-    } else {
-      // Fallback: no tracking available (shouldn't happen)
-      for (let i = innerSteps.length - 1; i >= 0; i--) {
-        const step = innerSteps[i];
-        if (!step.rollback) continue;
-        try {
-          await step.rollback(ctx, mergedOutput);
-        } catch (err) {
-          errors.push(toError(err));
-        }
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const { step, output } = entries[i];
+      if (!step.rollback) continue;
+      try {
+        await step.rollback(ctx, output);
+      } catch (err) {
+        errors.push(toError(err));
       }
     }
     if (errors.length > 0) {

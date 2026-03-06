@@ -53,11 +53,11 @@ import {
  * @param predicate - A per-item predicate. Return `true` to keep, `false` to discard.
  * @returns A frozen {@link TypedStep} that provides `{ [key]: Item[] }`.
  */
-export function filter<K extends string, Item>(
+export function filter<K extends string, Item, Ctx extends StepContext = StepContext>(
   key: K,
-  collection: (ctx: Readonly<StepContext>) => Item[],
-  predicate: (item: Item, ctx: Readonly<StepContext>) => boolean | Promise<boolean>,
-): TypedStep<StepContext, Record<K, Item[]>> {
+  collection: (ctx: Readonly<Ctx>) => Item[],
+  predicate: (item: Item, ctx: Readonly<Ctx>) => boolean | Promise<boolean>,
+): TypedStep<Ctx, Record<K, Item[]>> {
   const name = `filter(${key})`;
 
   const run = async (ctx: Readonly<StepContext>): Promise<StepResult<StepOutput>> => {
@@ -66,7 +66,7 @@ export function filter<K extends string, Item>(
 
     let items: unknown[];
     try {
-      items = collection(frozenCtx);
+      items = collection(frozenCtx as Readonly<Ctx>);
     } catch (err) {
       return stepFailure(toError(err), meta, name);
     }
@@ -84,7 +84,7 @@ export function filter<K extends string, Item>(
   return createStepObject({
     name,
     run: run as Step['run'],
-  }) as unknown as TypedStep<StepContext, Record<K, Item[]>>;
+  }) as unknown as TypedStep<Ctx, Record<K, Item[]>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -101,24 +101,25 @@ async function runFilter(
 ): Promise<StepResult<StepOutput>> {
   const settled = await Promise.allSettled(items.map(async (item) => predicate(item, ctx)));
 
-  const results: unknown[] = [];
+  // Check for errors first — don't collect partial results
   const allErrors: Error[] = [];
-
-  for (let i = 0; i < settled.length; i++) {
-    const s = settled[i];
-    if (s.status === 'rejected') {
-      allErrors.push(toError(s.reason));
-    } else if (s.value) {
-      results.push(items[i]);
-    }
+  for (const s of settled) {
+    if (s.status === 'rejected') allErrors.push(toError(s.reason));
   }
-
   if (allErrors.length > 0) {
     return stepFailure(
       collapseErrors(allErrors, `${name}: ${allErrors.length} predicate(s) failed`),
       meta,
       name,
     );
+  }
+
+  // All succeeded — collect results preserving original order
+  const results: unknown[] = [];
+  for (let i = 0; i < settled.length; i++) {
+    if ((settled[i] as PromiseFulfilledResult<boolean>).value) {
+      results.push(items[i]);
+    }
   }
 
   const data: StepOutput = { [key]: results };

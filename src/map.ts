@@ -70,18 +70,18 @@ function isStep(x: unknown): x is Step {
  */
 
 // Overload: plain function callback
-export function map<K extends string, Item, Result>(
+export function map<K extends string, Item, Result, Ctx extends StepContext = StepContext>(
   key: K,
-  collection: (ctx: Readonly<StepContext>) => Item[],
-  fn: (item: Item, ctx: Readonly<StepContext>) => Result | Promise<Result>,
-): TypedStep<StepContext, Record<K, Awaited<Result>[]>>;
+  collection: (ctx: Readonly<Ctx>) => Item[],
+  fn: (item: Item, ctx: Readonly<Ctx>) => Result | Promise<Result>,
+): TypedStep<Ctx, Record<K, Awaited<Result>[]>>;
 
 // Overload: step callback
-export function map<K extends string, S extends Step>(
+export function map<K extends string, S extends Step, Ctx extends StepContext = StepContext>(
   key: K,
-  collection: (ctx: Readonly<StepContext>) => StepContext[],
+  collection: (ctx: Readonly<Ctx>) => StepContext[],
   step: S,
-): TypedStep<StepContext, Record<K, ExtractProvides<S>[]>>;
+): TypedStep<Ctx, Record<K, ExtractProvides<S>[]>>;
 
 // Implementation
 export function map(
@@ -96,6 +96,8 @@ export function map(
   // INVARIANT: This relies on pipeline.ts storing the exact result.data
   // reference in its outputs array. If the pipeline ever clones
   // result.data, this WeakMap lookup will silently fail.
+  // Exercised by map.test.ts ("rolls back all items on external
+  // failure (later step fails)").
   const executionMap = new WeakMap<object, { items: unknown[]; ctx: StepContext }>();
 
   const run = async (ctx: Readonly<StepContext>): Promise<StepResult<StepOutput>> => {
@@ -125,17 +127,20 @@ export function map(
   };
 
   // Rollback (step mode only): roll back each succeeded item in reverse.
+  // The thrown RollbackError is intentional — the pipeline's own
+  // executeRollback loop catches it and records it in result.rollback.failed.
   const rollback: Step['rollback'] = stepMode
     ? async (_ctx, output) => {
         const step = fnOrStep as Step;
         if (!step.rollback) return;
         const exec = executionMap.get(output);
         if (!exec) return;
+        executionMap.delete(output);
         const results = (output as Record<string, unknown>)[key] as StepOutput[];
         const errors: Error[] = [];
         for (let i = results.length - 1; i >= 0; i--) {
           try {
-            const itemCtx = { ...exec.ctx, ...(exec.items[i] as StepContext) };
+            const itemCtx = Object.freeze({ ...exec.ctx, ...(exec.items[i] as StepContext) });
             await step.rollback(itemCtx, results[i]);
           } catch (err) {
             errors.push(toError(err));
@@ -193,7 +198,7 @@ async function runStepMode(
     if (step.rollback) {
       for (let i = succeeded.length - 1; i >= 0; i--) {
         try {
-          const itemCtx = { ...ctx, ...(items[succeeded[i].index] as StepContext) };
+          const itemCtx = Object.freeze({ ...ctx, ...(items[succeeded[i].index] as StepContext) });
           await step.rollback(itemCtx, succeeded[i].output);
         } catch {
           // Best-effort — swallowed during partial failure
@@ -228,17 +233,11 @@ async function runFunctionMode(
 ): Promise<StepResult<StepOutput>> {
   const settled = await Promise.allSettled(items.map(async (item) => fn(item, ctx)));
 
-  const results: unknown[] = [];
+  // Check for errors first — don't collect partial results
   const allErrors: Error[] = [];
-
   for (const s of settled) {
-    if (s.status === 'rejected') {
-      allErrors.push(toError(s.reason));
-    } else {
-      results.push(s.value);
-    }
+    if (s.status === 'rejected') allErrors.push(toError(s.reason));
   }
-
   if (allErrors.length > 0) {
     return stepFailure(
       collapseErrors(allErrors, `${stepName}: ${allErrors.length} item(s) failed`),
@@ -246,6 +245,9 @@ async function runFunctionMode(
       stepName,
     );
   }
+
+  // All succeeded — collect results in original order
+  const results = settled.map((s) => (s as PromiseFulfilledResult<unknown>).value);
 
   const data: StepOutput = { [key]: results };
   return stepSuccess(data, meta);

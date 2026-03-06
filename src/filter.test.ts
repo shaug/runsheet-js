@@ -285,6 +285,26 @@ describe('filter', () => {
     });
   });
 
+  describe('typed context', () => {
+    it('infers context type from collection selector', async () => {
+      const p = pipeline<{ nums: number[]; threshold: number }>({ name: 'test' })
+        .step(
+          filter<'big', number, { nums: number[]; threshold: number }>(
+            'big',
+            (ctx) => ctx.nums,
+            (n, ctx) => n > ctx.threshold,
+          ),
+        )
+        .build();
+
+      const result = await p.run({ nums: [1, 5, 10], threshold: 4 });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.big).toEqual([5, 10]);
+      }
+    });
+  });
+
   describe('metadata', () => {
     it('uses a descriptive step name', async () => {
       const p = pipeline({

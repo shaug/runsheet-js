@@ -257,6 +257,8 @@ export function buildPipelineStep<Args extends StepContext, S extends Step>(conf
   // INVARIANT: This relies on pipeline.ts storing the exact result.data
   // reference in its outputs array. If the pipeline ever clones
   // result.data, this WeakMap lookup will silently fail.
+  // Exercised by the reentrancy test in pipeline.test.ts ("handles
+  // reentrancy — parallel pipelines roll back independently").
   const stateMap = new WeakMap<object, ExecutionState>();
 
   const run = async (ctx: Readonly<StepContext>): Promise<AggregateResult<StepOutput>> => {

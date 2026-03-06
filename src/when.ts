@@ -1,4 +1,5 @@
 import type { Step, StepContext, TypedStep } from './types.js';
+import { createStepObject } from './internal.js';
 
 /**
  * A step with a conditional predicate attached.
@@ -29,10 +30,21 @@ export function when<Requires extends StepContext, Provides extends StepContext>
   predicate: (ctx: Readonly<Requires>) => boolean,
   step: TypedStep<Requires, Provides>,
 ): TypedStep<Requires, Provides> {
+  const base = createStepObject({
+    name: step.name,
+    run: step.run,
+    rollback: step.rollback,
+    requires: step.requires,
+    provides: step.provides,
+    retry: step.retry,
+    timeout: step.timeout,
+  });
+  // createStepObject returns a frozen object, so we must build a new
+  // object that includes the predicate and freeze it ourselves.
   return Object.freeze({
-    ...step,
+    ...base,
     predicate: predicate as ConditionalStep['predicate'],
-  }) as TypedStep<Requires, Provides>;
+  }) as unknown as TypedStep<Requires, Provides>;
 }
 
 /** Type guard for conditional steps. */

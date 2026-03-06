@@ -312,6 +312,61 @@ describe('map', () => {
     });
   });
 
+  describe('inner step features', () => {
+    it('retries per item in step mode', async () => {
+      const attempts: Record<number, number> = {};
+
+      const flakyStep = defineStep({
+        name: 'flakyStep',
+        requires: z.object({ value: z.number() }),
+        provides: z.object({ out: z.number() }),
+        retry: { count: 2 },
+        run: async (ctx) => {
+          attempts[ctx.value] = (attempts[ctx.value] ?? 0) + 1;
+          if (ctx.value === 2 && attempts[ctx.value] < 3) throw new Error('transient');
+          return { out: ctx.value * 10 };
+        },
+      });
+
+      const p = pipeline({
+        name: 'test',
+        steps: [map('results', () => [{ value: 1 }, { value: 2 }], flakyStep)],
+      });
+
+      const result = await p.run({});
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.results).toEqual([{ out: 10 }, { out: 20 }]);
+      }
+      expect(attempts[2]).toBe(3); // 1 initial + 2 retries
+    });
+
+    it('times out per item in step mode', async () => {
+      const slowStep = defineStep({
+        name: 'slowStep',
+        requires: z.object({ value: z.number() }),
+        provides: z.object({ out: z.number() }),
+        timeout: 20,
+        run: async (ctx) => {
+          if (ctx.value === 2) await new Promise((r) => setTimeout(r, 200));
+          return { out: ctx.value };
+        },
+      });
+
+      const p = pipeline({
+        name: 'test',
+        steps: [map('results', () => [{ value: 1 }, { value: 2 }], slowStep)],
+      });
+
+      const result = await p.run({});
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBeInstanceOf(RunsheetError);
+        expect((result.error as RunsheetError).code).toBe('TIMEOUT');
+      }
+    });
+  });
+
   describe('pipeline integration', () => {
     it('works within a sequential pipeline', async () => {
       const setup = defineStep({

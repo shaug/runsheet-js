@@ -116,6 +116,8 @@ export function choice(...args: (BranchTuple | Step)[]): AggregateStep<StepConte
   // INVARIANT: This relies on pipeline.ts storing the exact result.data
   // reference in its outputs array. If the pipeline ever clones
   // result.data, this WeakMap lookup will silently fail.
+  // Exercised by choice.test.ts ("rolls back the matched branch when
+  // a later step fails").
   const branchMap = new WeakMap<object, number>();
 
   const run = async (ctx: Readonly<StepContext>): Promise<AggregateResult<StepOutput>> => {
@@ -157,9 +159,12 @@ export function choice(...args: (BranchTuple | Step)[]): AggregateStep<StepConte
   };
 
   // Rollback: only the matched branch needs rollback.
+  // The thrown RollbackError is intentional — the pipeline's own
+  // executeRollback loop catches it and records it in result.rollback.failed.
   const rollback: NonNullable<Step['rollback']> = async (ctx, output) => {
     const branchIndex = branchMap.get(output);
     if (branchIndex === undefined) return;
+    branchMap.delete(output);
     const [, step] = innerBranches[branchIndex];
     if (step.rollback) {
       try {

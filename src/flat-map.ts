@@ -50,11 +50,11 @@ import {
  * @param fn - A per-item callback that returns an array (or Promise of array).
  * @returns A frozen {@link TypedStep} that provides `{ [key]: Item[] }`.
  */
-export function flatMap<K extends string, Item, Result>(
+export function flatMap<K extends string, Item, Result, Ctx extends StepContext = StepContext>(
   key: K,
-  collection: (ctx: Readonly<StepContext>) => Item[],
-  fn: (item: Item, ctx: Readonly<StepContext>) => Result[] | Promise<Result[]>,
-): TypedStep<StepContext, Record<K, Result[]>> {
+  collection: (ctx: Readonly<Ctx>) => Item[],
+  fn: (item: Item, ctx: Readonly<Ctx>) => Result[] | Promise<Result[]>,
+): TypedStep<Ctx, Record<K, Result[]>> {
   const name = `flatMap(${key})`;
 
   const run = async (ctx: Readonly<StepContext>): Promise<StepResult<StepOutput>> => {
@@ -63,7 +63,7 @@ export function flatMap<K extends string, Item, Result>(
 
     let items: unknown[];
     try {
-      items = collection(frozenCtx);
+      items = collection(frozenCtx as Readonly<Ctx>);
     } catch (err) {
       return stepFailure(toError(err), meta, name);
     }
@@ -81,7 +81,7 @@ export function flatMap<K extends string, Item, Result>(
   return createStepObject({
     name,
     run: run as Step['run'],
-  }) as unknown as TypedStep<StepContext, Record<K, Result[]>>;
+  }) as unknown as TypedStep<Ctx, Record<K, Result[]>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -98,23 +98,23 @@ async function runFlatMap(
 ): Promise<StepResult<StepOutput>> {
   const settled = await Promise.allSettled(items.map(async (item) => fn(item, ctx)));
 
-  const results: unknown[] = [];
+  // Check for errors first — don't collect partial results
   const allErrors: Error[] = [];
-
   for (const s of settled) {
-    if (s.status === 'rejected') {
-      allErrors.push(toError(s.reason));
-    } else {
-      results.push(...s.value);
-    }
+    if (s.status === 'rejected') allErrors.push(toError(s.reason));
   }
-
   if (allErrors.length > 0) {
     return stepFailure(
       collapseErrors(allErrors, `${name}: ${allErrors.length} callback(s) failed`),
       meta,
       name,
     );
+  }
+
+  // All succeeded — flatten results
+  const results: unknown[] = [];
+  for (const s of settled) {
+    results.push(...(s as PromiseFulfilledResult<unknown[]>).value);
   }
 
   const data: StepOutput = { [key]: results };

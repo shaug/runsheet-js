@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, pipeline, choice, RunsheetError } from './index.js';
+import { defineStep, pipeline, choice, when, RunsheetError } from './index.js';
 
 describe('choice', () => {
   const chargeCard = defineStep({
@@ -363,6 +363,31 @@ describe('choice', () => {
       expect(result.success).toBe(false);
       // Only branchA ran, so only branchA should be rolled back
       expect(rolledBack).toEqual(['branchA']);
+    });
+  });
+
+  describe('conditional branches', () => {
+    it('executes a when()-wrapped branch when predicate matches', async () => {
+      const conditional = when(
+        (ctx: { amount: number }) => ctx.amount > 50,
+        defineStep({
+          name: 'bigCharge',
+          requires: z.object({ amount: z.number() }),
+          provides: z.object({ chargeId: z.string() }),
+          run: async (ctx) => ({ chargeId: `big_${ctx.amount}` }),
+        }),
+      );
+
+      const p = pipeline({
+        name: 'test',
+        steps: [choice([() => true, conditional])],
+      });
+
+      const result = await p.run({ amount: 100 });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.chargeId).toBe('big_100');
+      }
     });
   });
 
