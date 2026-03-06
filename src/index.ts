@@ -23,7 +23,6 @@ export { map } from './map.js';
 export { filter } from './filter.js';
 export { flatMap } from './flat-map.js';
 export type { StepMiddleware, StepInfo, StepExecutor } from './middleware.js';
-export { createPipeline } from './builder.js';
 export type { PipelineBuilder } from './builder.js';
 
 export type {

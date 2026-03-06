@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, pipeline, createPipeline, when, RunsheetError } from './index.js';
+import { defineStep, pipeline, when, RunsheetError } from './index.js';
 import type { StepMiddleware } from './index.js';
 
 describe('pipeline (builder form)', () => {
@@ -196,27 +196,6 @@ describe('pipeline (builder form)', () => {
           .step(addB)
           .build(),
       ).not.toThrow();
-    });
-  });
-
-  describe('createPipeline (deprecated, backwards compat)', () => {
-    it('still works as before', async () => {
-      const p = createPipeline<{ name: string }>('test')
-        .step(
-          defineStep({
-            name: 'greet',
-            requires: z.object({ name: z.string() }),
-            provides: z.object({ greeting: z.string() }),
-            run: async (ctx) => ({ greeting: `Hi ${ctx.name}` }),
-          }),
-        )
-        .build();
-
-      const result = await p.run({ name: 'Alice' });
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.greeting).toBe('Hi Alice');
-      }
     });
   });
 });
