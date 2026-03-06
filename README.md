@@ -371,6 +371,42 @@ tuple) can be passed as the last argument to serve as a default — equivalent t
 `[() => true, step]`. If no predicate matches, the step fails with a
 `CHOICE_NO_MATCH` error. Only the matched branch participates in rollback.
 
+## Map (collection iteration)
+
+Iterate over a collection and run a function or step per item, concurrently —
+like an AWS Step Functions Map state:
+
+```typescript
+import { map } from 'runsheet';
+
+// Function form — items can be any type
+const pipeline = buildPipeline({
+  name: 'notify',
+  steps: [
+    map(
+      'emails',
+      (ctx) => ctx.users,
+      async (user) => {
+        await sendEmail(user.email);
+        return { email: user.email, sentAt: new Date() };
+      },
+    ),
+  ],
+});
+
+// Step form — reuse existing steps
+const pipeline = buildPipeline({
+  name: 'process',
+  steps: [map('results', (ctx) => ctx.items, processItem)],
+});
+```
+
+Items run concurrently via `Promise.allSettled`. Results are collected into an
+array under the given key. In step form, each item is spread into the pipeline
+context (`{ ...ctx, ...item }`) so the step sees both pipeline-level and
+per-item values. On partial failure, succeeded items are rolled back (step form
+only).
+
 ## Rollback
 
 When a step fails, rollback handlers for all previously completed steps execute
@@ -491,6 +527,13 @@ Execute the first branch whose predicate returns `true`. Each branch is a
 `[predicate, step]` tuple. A bare step can be passed as the last argument as a
 default. Returns a single step usable anywhere a regular step is accepted. Only
 the matched branch participates in rollback.
+
+### `map(key, collection, fnOrStep)`
+
+Iterate over a collection and run a function or step per item, concurrently.
+Results are collected into `{ [key]: Result[] }`. Accepts a plain function
+`(item, ctx) => result` or a `TypedStep` (items must be objects, spread into
+context). Step form supports per-item rollback on partial and external failure.
 
 ### `when(predicate, step)`
 
