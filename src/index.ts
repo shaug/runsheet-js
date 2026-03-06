@@ -22,6 +22,7 @@ export { choice } from './choice.js';
 export { map } from './map.js';
 export { filter } from './filter.js';
 export { flatMap } from './flat-map.js';
+export { distribute } from './distribute.js';
 export type { StepMiddleware, StepInfo, StepExecutor } from './middleware.js';
 export type { PipelineBuilder } from './builder.js';
 
