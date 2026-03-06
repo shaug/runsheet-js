@@ -76,10 +76,12 @@ flow and middleware system — then rebuilds them on an immutable foundation usi
    One path each: return output on success, throw on failure. The `requires`
    schema handles input validation before `run` is called.
 
-4. **Context vs. arguments: flat merge, original args in metadata.** Flat merge
-   is the default — simple, and 90% of steps just need "what do I have so far."
-   Original args are preserved on the pipeline execution metadata, not on the
-   context itself.
+4. **Context vs. arguments: flat merge, args persist.** Initial args are merged
+   into the context and persist through the entire pipeline — no step needs to
+   re-provide them. This is the key design decision that makes dependency
+   injection free: pass infrastructure deps (DB clients, API clients) as args,
+   and every step can `requires` them without any step needing to `provides`
+   them. Original args are also preserved on the pipeline execution metadata.
 
 5. **`provides` overlap: last writer wins.** Intentional overwriting is valid
    (e.g., `setInitialStatus` and `finalizeStatus` both providing `status`). The
@@ -210,11 +212,6 @@ return { completed, failed }
   collections, or filtering steps dynamically — moving toward the expressiveness
   of [AWS Step Functions] but with type-safe, code-first ergonomics instead of
   YAML configuration.
-- **Dependency injection / services** — a separate `services` channel (distinct
-  from accumulated context) for runtime dependencies like DB clients, queue
-  connections, and external API clients. Currently these flow through args,
-  which works but conflates infrastructure with business inputs. A dedicated
-  injection mechanism would make step signatures cleaner and testing easier.
 
 <!-- Reference links — please keep alphabetized -->
 

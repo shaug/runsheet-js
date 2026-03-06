@@ -13,8 +13,11 @@ compile-time safety.
 
 ## Core concepts
 
+- Args persist and outputs accumulate. Initial arguments flow through the entire
+  pipeline, each step's output merges into the context, and every step sees the
+  full picture of everything before it.
 - Steps declare `requires` (input from context) and `provides` (output added to
-  context). Context accumulates immutably across steps.
+  context).
 - Pipelines run steps sequentially. On failure, rollback handlers execute in
   reverse order with snapshot-based context.
 - Results use `{ success, data, errors }` — never throws.
@@ -215,6 +218,31 @@ Promise.allSettled. Outputs merge in array order. On partial failure, succeeded
 inner steps are rolled back before the error propagates. Inner steps retain
 their own requires/provides validation, retry, and timeout. Conditional steps
 (when()) work inside parallel().
+
+### Dependency injection
+
+Pass dependencies as pipeline args — they're available to every step through the
+accumulated context without any step needing to provides them:
+
+```typescript
+const pipeline = createPipeline<{
+  orderId: string;
+  stripe: Stripe;
+  db: Database;
+}>('placeOrder')
+  .step(validateOrder)
+  .step(chargePayment)
+  .build();
+
+await pipeline.run({
+  orderId: '123',
+  stripe: stripeClient,
+  db: dbClient,
+});
+```
+
+Steps declare infrastructure deps in requires like any other context key. For
+testing, swap in mocks at the call site.
 
 ### when (conditional steps)
 

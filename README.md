@@ -33,6 +33,10 @@ and runsheet makes sure they execute in order with clear contracts between them.
 
 ## What this is
 
+Args persist and outputs accumulate. That's the core model — initial arguments
+flow through the entire pipeline, each step's output merges into the context,
+and every step sees the full picture of everything before it.
+
 A pipeline orchestration library with:
 
 - **Strongly typed steps** — each step's `run`, `rollback`, `requires`, and
@@ -299,6 +303,46 @@ On partial failure, succeeded inner steps are rolled back before the error
 propagates. Inner steps retain their own `requires`/`provides` validation,
 `retry`, and `timeout` behavior. Conditional steps (via `when()`) work inside
 `parallel()`.
+
+## Dependency injection
+
+No special mechanism needed — pass dependencies as pipeline args and they're
+available to every step through the accumulated context:
+
+```typescript
+const chargePayment = defineStep({
+  name: 'chargePayment',
+  requires: z.object({
+    order: z.object({ total: z.number() }),
+    stripe: z.custom<Stripe>(),
+  }),
+  provides: z.object({ chargeId: z.string() }),
+  run: async (ctx) => {
+    const charge = await ctx.stripe.charges.create({ amount: ctx.order.total });
+    return { chargeId: charge.id };
+  },
+});
+
+const pipeline = createPipeline<{
+  orderId: string;
+  stripe: Stripe;
+  db: Database;
+}>('placeOrder')
+  .step(validateOrder)
+  .step(chargePayment)
+  .build();
+
+await pipeline.run({
+  orderId: '123',
+  stripe: stripeClient,
+  db: dbClient,
+});
+```
+
+Args persist through the entire pipeline without any step needing to `provides`
+them. TypeScript enforces at compile time that every step's `requires` are
+satisfied by the accumulated context. For testing, swap in mocks at the call
+site.
 
 ## Rollback
 
