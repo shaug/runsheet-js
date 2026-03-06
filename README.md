@@ -439,6 +439,37 @@ Predicates run concurrently via `Promise.allSettled`. Original order is
 preserved. If any predicate throws, the step fails. No rollback (filtering is a
 pure operation).
 
+### FlatMap (collection expansion)
+
+```typescript
+import { flatMap } from 'runsheet';
+
+const pipeline = buildPipeline({
+  name: 'process',
+  steps: [
+    flatMap(
+      'lineItems',
+      (ctx) => ctx.orders,
+      (order) => order.items,
+    ),
+  ],
+});
+
+// Async callback
+flatMap(
+  'emails',
+  (ctx) => ctx.teams,
+  async (team) => {
+    const members = await fetchMembers(team.id);
+    return members.map((m) => m.email);
+  },
+);
+```
+
+Maps each item to an array, then flattens one level. Callbacks run concurrently
+via `Promise.allSettled`. If any callback throws, the step fails. No rollback
+(pure operation).
+
 ## Rollback
 
 When a step fails, rollback handlers for all previously completed steps execute
@@ -572,6 +603,11 @@ context). Step form supports per-item rollback on partial and external failure.
 Filter a collection from context using a sync or async predicate. Predicates run
 concurrently. Items where the predicate returns `true` are kept; original order
 is preserved. Results are collected into `{ [key]: Item[] }`. No rollback.
+
+### `flatMap(key, collection, fn)`
+
+Map each item in a collection to an array, then flatten one level. Callbacks run
+concurrently. Results are collected into `{ [key]: Result[] }`. No rollback.
 
 ### `when(predicate, step)`
 

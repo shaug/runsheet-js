@@ -203,6 +203,7 @@ return { completed, failed }
 | Branching              | Not supported                | `choice([pred, step], ...)`           | Not built-in          | Not built-in               |
 | Collection mapping     | Not supported                | `map(key, collection, fn/step)`       | Not built-in          | Not built-in               |
 | Collection filtering   | Not supported                | `filter(key, collection, predicate)`  | Not built-in          | Not built-in               |
+| Collection flatMap     | Not supported                | `flatMap(key, collection, fn)`        | Not built-in          | Not built-in               |
 | Result pattern         | `.result()` / `.call()`      | `Result<T>` from composable-functions | `Result<T>`           | Throws `PipelineError`     |
 | Type safety            | Runtime (Ruby)               | Compile-time + optional runtime       | Compile-time          | Compile-time               |
 | Parallel composition   | Not supported                | `parallel(a, b, ...)`                 | `all()` / `collect()` | Not supported              |

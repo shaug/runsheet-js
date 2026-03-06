@@ -298,6 +298,27 @@ predicates. Items where the predicate returns true are kept; original order is
 preserved. If any predicate throws, the step fails. No rollback (pure
 operation).
 
+### flatMap (collection expansion)
+
+```typescript
+import { flatMap } from 'runsheet';
+
+const pipeline = buildPipeline({
+  name: 'process',
+  steps: [
+    flatMap(
+      'lineItems',
+      (ctx) => ctx.orders,
+      (order) => order.items,
+    ),
+  ],
+});
+```
+
+Maps each item to an array, then flattens one level. Callbacks run concurrently
+via Promise.allSettled. Supports sync or async callbacks. If any callback
+throws, the step fails. No rollback (pure operation).
+
 ### Dependency injection
 
 Pass dependencies as pipeline args — they're available to every step through the
@@ -411,19 +432,21 @@ RunsheetError instances with a discriminated `code` property:
 - STRICT_OVERLAP — two steps provide the same key (strict mode, build time)
 - CHOICE_NO_MATCH — no branch matched in a choice() step
 - ROLLBACK — one or more rollback handlers failed in a combinator
+- UNKNOWN — a non-Error value was thrown and caught by the pipeline engine
 
 Application errors (thrown from step run functions) pass through as-is.
 
 ## Key exports
 
 Functions: defineStep, buildPipeline, createPipeline, when, parallel, choice,
-map, filter Classes: RunsheetError, RequiresValidationError,
+map, flatMap, filter Classes: RunsheetError, RequiresValidationError,
 ProvidesValidationError, ArgsValidationError, PredicateError, TimeoutError,
-RetryExhaustedError, StrictOverlapError, ChoiceNoMatchError, RollbackError
-Types: Step, TypedStep, StepConfig, RetryPolicy, Pipeline, PipelineBuilder,
-PipelineResult, PipelineSuccess, PipelineFailure, PipelineExecutionMeta,
-RollbackReport, RollbackFailure, StepMiddleware, StepInfo, StepExecutor,
-ConditionalStep, RunsheetErrorCode, Result, Success, Failure
+RetryExhaustedError, StrictOverlapError, ChoiceNoMatchError, RollbackError,
+UnknownError Types: Step, TypedStep, StepConfig, RetryPolicy, Pipeline,
+PipelineBuilder, PipelineResult, PipelineSuccess, PipelineFailure,
+PipelineExecutionMeta, RollbackReport, RollbackFailure, StepMiddleware,
+StepInfo, StepExecutor, ConditionalStep, RunsheetErrorCode, Result, Success,
+Failure
 
 ## Important patterns
 
