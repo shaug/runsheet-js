@@ -15,8 +15,8 @@ runsheet draws from two projects:
 
 runsheet takes the best ideas from both: sunny/actor's explicit I/O declarations
 and composition ergonomics, combined with fieldguide/pipeline's typed context
-flow and middleware system — then rebuilds them on an immutable foundation using
-[composable-functions] for `Result` semantics and error handling.
+flow and middleware system — then rebuilds them on an immutable, type-safe
+foundation with its own `StepResult` semantics and error handling.
 
 ## Design goals
 
@@ -35,9 +35,10 @@ flow and middleware system — then rebuilds them on an immutable foundation usi
 - **Rollback with snapshots.** On failure at step N, rollback handlers for steps
   N-1...0 execute in reverse order. Each handler receives the pre-step snapshot
   and the step's output so it knows exactly what to undo.
-- **composable-functions as foundation.** Use its `Result` type
-  (`{ success, data, errors }`) and error handling. Steps are composable
-  functions internally. The library wraps them with pipeline-specific concerns.
+- **Unified execution model.** Pipelines are steps. `buildPipeline()` returns a
+  `TypedStep` — a pipeline can be used directly as a step in another pipeline's
+  steps array. Everything returns `StepResult`, whether it's a single step or a
+  composed pipeline.
 - **Middleware.** Cross-cutting concerns (logging, timing, metrics, throttling)
   attach to the pipeline and wrap each step execution.
 
@@ -71,10 +72,9 @@ flow and middleware system — then rebuilds them on an immutable foundation usi
    entirely.
 
 3. **Step failure model: throw-to-fail only.** Steps always throw to signal
-   failure. The `composable()` wrapper catches throws and produces `Result`.
-   Steps should NOT return failure Results directly — that creates ambiguity.
-   One path each: return output on success, throw on failure. The `requires`
-   schema handles input validation before `run` is called.
+   failure. The `run` wrapper catches throws and produces `StepResult`. Steps
+   should NOT return failure results directly — that creates ambiguity. One path
+   each: return output on success, throw on failure.
 
 4. **Context vs. arguments: flat merge, args persist.** Initial args are merged
    into the context and persist through the entire pipeline — no step needs to
@@ -108,10 +108,10 @@ flow and middleware system — then rebuilds them on an immutable foundation usi
    `Readonly<T>` types. Shallow freeze is one call per step — negligible cost
    relative to any real business logic. No configurable "unfrozen" mode.
 
-10. **Result type: composable-functions' Result, extended.** Use
-    composable-functions' `Result` directly as the step-level return type,
-    extended with pipeline metadata (step name, rollback status) at the pipeline
-    level.
+10. **Result type: `StepResult<T>`.** A discriminated union — `StepSuccess<T>`
+    carries `data` and `meta`; `StepFailure` carries a single `error`,
+    `failedStep`, `rollback`, and `meta`. `failedStep` and `rollback` only exist
+    on the failure branch. Multiple errors use `AggregateError`.
 
 11. **Strong typing as a contract.** The library relies on strong, static typing
     as part of its contract to end-users. `any` is avoided entirely in the
@@ -153,12 +153,10 @@ for each step in steps:
   if step is conditional and predicate(context) is false:
     skip (record in stepsSkipped)
   snapshot pre-step context
-  validate step.requires against context (if schema provided)
-  result = await step.run(context)
+  result = await step.run(context)  // validation happens inside
   if result is failure:
-    await rollback(executedSteps, snapshots, outputs)
+    await rollback(executedSteps)
     return failure with rollback report
-  validate result.data against step.provides (if schema provided)
   context = freeze({ ...context, ...result.data })
 
 return success with final context
@@ -180,39 +178,41 @@ for i from lastExecutedStep down to 0:
 return { completed, failed }
 ```
 
-### How composable-functions fits in
+### How pipeline composition works
 
-- Each step's `run` function is wrapped with `composable()` internally, giving
-  it `Result` semantics (catches throws, returns `{ success, data, errors }`).
-- Schema validation on requires/provides uses Zod's `safeParse` when schemas are
-  provided. composable-functions' `ParserSchema` type defines the schema
-  interface, so Valibot and ArkType schemas also work via Standard Schema.
-- The pipeline's overall return type is `PipelineResult<T>`, which extends
-  composable-functions' `Success<T>` / `Failure` with pipeline metadata.
+`buildPipeline()` returns a `TypedStep` with a closure-captured execution state.
+When used as a step in an outer pipeline:
+
+- The inner pipeline's `run` executes all its steps and returns a `StepResult`.
+- On success, the inner pipeline captures its execution state for potential
+  rollback.
+- If a later outer step fails, the inner pipeline's rollback handler re-walks
+  its captured state and rolls back inner steps in reverse order.
+- From the outer pipeline's perspective, the inner pipeline is a single atomic
+  step — its internal structure is opaque.
 
 ## Comparison to prior art
 
-| Feature                | sunny/actor (Ruby)           | runsheet                              | composable-functions  | @fieldguide/pipeline       |
-| ---------------------- | ---------------------------- | ------------------------------------- | --------------------- | -------------------------- |
-| Declared I/O           | `input`/`output` macros      | `requires`/`provides` schemas         | Function signatures   | Args/Context/Results types |
-| Sequential composition | `play A, B, C`               | `buildPipeline({ steps })`            | `pipe(a, b, c)`       | Builder with stages        |
-| Shared context         | Mutable result object        | Immutable accumulation                | No shared state       | Mutable context            |
-| Rollback               | `def rollback` (trust-based) | Snapshot-verified rollback            | Not supported         | Stage rollback             |
-| Middleware             | Not built-in                 | Built-in                              | `map`/`catchFailure`  | Express-style              |
-| Conditional steps      | `if:`/`unless:` lambdas      | `when(predicate, step)`               | Not built-in          | Not built-in               |
-| Branching              | Not supported                | `choice([pred, step], ...)`           | Not built-in          | Not built-in               |
-| Collection mapping     | Not supported                | `map(key, collection, fn/step)`       | Not built-in          | Not built-in               |
-| Collection filtering   | Not supported                | `filter(key, collection, predicate)`  | Not built-in          | Not built-in               |
-| Collection flatMap     | Not supported                | `flatMap(key, collection, fn)`        | Not built-in          | Not built-in               |
-| Result pattern         | `.result()` / `.call()`      | `Result<T>` from composable-functions | `Result<T>`           | Throws `PipelineError`     |
-| Type safety            | Runtime (Ruby)               | Compile-time + optional runtime       | Compile-time          | Compile-time               |
-| Parallel composition   | Not supported                | `parallel(a, b, ...)`                 | `all()` / `collect()` | Not supported              |
+| Feature                | sunny/actor (Ruby)           | runsheet                             | composable-functions  | @fieldguide/pipeline       |
+| ---------------------- | ---------------------------- | ------------------------------------ | --------------------- | -------------------------- |
+| Declared I/O           | `input`/`output` macros      | `requires`/`provides` schemas        | Function signatures   | Args/Context/Results types |
+| Sequential composition | `play A, B, C`               | `buildPipeline({ steps })`           | `pipe(a, b, c)`       | Builder with stages        |
+| Shared context         | Mutable result object        | Immutable accumulation               | No shared state       | Mutable context            |
+| Rollback               | `def rollback` (trust-based) | Snapshot-verified rollback           | Not supported         | Stage rollback             |
+| Middleware             | Not built-in                 | Built-in                             | `map`/`catchFailure`  | Express-style              |
+| Conditional steps      | `if:`/`unless:` lambdas      | `when(predicate, step)`              | Not built-in          | Not built-in               |
+| Branching              | Not supported                | `choice([pred, step], ...)`          | Not built-in          | Not built-in               |
+| Collection mapping     | Not supported                | `map(key, collection, fn/step)`      | Not built-in          | Not built-in               |
+| Collection filtering   | Not supported                | `filter(key, collection, predicate)` | Not built-in          | Not built-in               |
+| Collection flatMap     | Not supported                | `flatMap(key, collection, fn)`       | Not built-in          | Not built-in               |
+| Result pattern         | `.result()` / `.call()`      | `StepResult<T>`                      | `Result<T>`           | Throws `PipelineError`     |
+| Type safety            | Runtime (Ruby)               | Compile-time + optional runtime      | Compile-time          | Compile-time               |
+| Parallel composition   | Not supported                | `parallel(a, b, ...)`                | `all()` / `collect()` | Not supported              |
 
 <!-- Reference links — please keep alphabetized -->
 
 [@fieldguide/pipeline]: https://github.com/fieldguide/pipeline
 [AWS Step Functions]: https://aws.amazon.com/step-functions/
-[composable-functions]: https://github.com/seasonedcc/composable-functions
 [Inngest]: https://www.inngest.com/
 [Temporal]: https://temporal.io/
 [sunny/actor]: https://github.com/sunny/actor

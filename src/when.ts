@@ -19,24 +19,9 @@ export type ConditionalStep = Step & {
  * skipped:
  * - No context snapshot is taken.
  * - No rollback entry is created.
- * - The step name is recorded in `result.meta.stepsSkipped`.
+ * - The step name is recorded in the pipeline's `meta.stepsSkipped`.
  *
- * If the predicate throws, the pipeline treats it as a step failure
- * and triggers rollback for any previously completed steps.
- *
- * @example
- * ```ts
- * const steps = [
- *   validateOrder,
- *   when((ctx) => ctx.order.amount > 100, notifyManager),
- *   sendConfirmation,
- * ];
- * ```
- *
- * @typeParam Requires - Inferred from the step's requires type.
- * @typeParam Provides - Inferred from the step's provides type.
- * @param predicate - Guard function. Receives the current accumulated
- *   context (frozen). Return `true` to execute, `false` to skip.
+ * @param predicate - Guard function. Return `true` to execute, `false` to skip.
  * @param step - The step to conditionally execute.
  * @returns A frozen {@link TypedStep} with the predicate attached.
  */

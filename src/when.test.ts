@@ -186,9 +186,9 @@ describe('when', () => {
     const result = await pipeline.run({});
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.errors[0]).toBeInstanceOf(RunsheetError);
-      expect((result.errors[0] as RunsheetError).code).toBe('PREDICATE');
-      expect(result.errors[0].message).toContain('predicate');
+      expect(result.error).toBeInstanceOf(RunsheetError);
+      expect((result.error as RunsheetError).code).toBe('PREDICATE');
+      expect(result.error.message).toContain('predicate');
     }
   });
 });

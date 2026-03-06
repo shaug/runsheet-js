@@ -1,5 +1,4 @@
-import type { Result } from 'composable-functions';
-import type { Step, StepContext, StepOutput } from './types.js';
+import type { Step, StepContext, StepOutput, StepResult } from './types.js';
 
 /**
  * Metadata about the step being executed, passed to middleware.
@@ -19,10 +18,9 @@ export type StepInfo = {
 /**
  * A function that executes a step (or the next middleware in the chain).
  *
- * Receives the frozen accumulated context and returns a `Result` — either
- * `{ success: true, data }` or `{ success: false, errors }`.
+ * Receives the frozen accumulated context and returns a {@link StepResult}.
  */
-export type StepExecutor = (ctx: Readonly<StepContext>) => Promise<Result<StepOutput>>;
+export type StepExecutor = (ctx: Readonly<StepContext>) => Promise<StepResult<StepOutput>>;
 
 /**
  * Middleware that wraps the entire step lifecycle, including schema
@@ -34,7 +32,7 @@ export type StepExecutor = (ctx: Readonly<StepContext>) => Promise<Result<StepOu
  *
  * - **Observe**: read the context or result for logging/metrics.
  * - **Transform**: modify the result before returning it.
- * - **Short-circuit**: return a `Result` without calling `next`.
+ * - **Short-circuit**: return a `StepResult` without calling `next`.
  *
  * If a middleware throws, the pipeline catches it and treats it as a
  * step failure (triggering rollback for previously completed steps).

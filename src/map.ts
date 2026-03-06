@@ -1,6 +1,12 @@
-import type { Result } from 'composable-functions';
-import type { ExtractProvides, Step, StepContext, StepOutput, TypedStep } from './types.js';
-import { runInnerStep, toError } from './internal.js';
+import type {
+  ExtractProvides,
+  Step,
+  StepContext,
+  StepOutput,
+  StepResult,
+  TypedStep,
+} from './types.js';
+import { toError, baseMeta, stepSuccess, stepFailure } from './internal.js';
 import { RollbackError } from './errors.js';
 
 // ---------------------------------------------------------------------------
@@ -18,18 +24,15 @@ function isStep(x: unknown): x is Step {
 /**
  * Iterate over a collection and run a function or step per item, concurrently.
  *
- * Similar to an AWS Step Functions Map state — extracts a collection from
- * the pipeline context, runs the callback for each item via
- * `Promise.allSettled`, and collects results into an array under the
- * given key.
- *
  * **Function form:** `(item, ctx) => result` — items can be any type.
  *
  * **Step form:** each item must be an object whose keys are spread into
- * the pipeline context before the step runs (i.e., the step receives
- * `{ ...ctx, ...item }`). The step's own `requires`/`provides`
- * validation, `retry`, and `timeout` apply per item. On partial failure,
- * succeeded items are rolled back (if the step has a rollback handler).
+ * the pipeline context before the step runs.
+ *
+ * The step receives `{ ...ctx, ...item }`. The step's own
+ * `requires`/`provides` validation, `retry`, and `timeout` apply
+ * per item. On partial failure, succeeded items are rolled back
+ * (if the step has a rollback handler).
  *
  * @example
  * ```ts
@@ -84,30 +87,32 @@ export function map(
 
   // Track per-execution data for rollback (step mode only).
   // INVARIANT: This relies on pipeline.ts storing the exact result.data
-  // reference in its outputs array (pipeline.ts:344-345). If the pipeline
-  // ever clones result.data, this WeakMap lookup will silently fail.
+  // reference in its outputs array. If the pipeline ever clones
+  // result.data, this WeakMap lookup will silently fail.
   const executionMap = new WeakMap<object, { items: unknown[]; ctx: StepContext }>();
 
-  const run: Step['run'] = async (ctx) => {
-    // Extract collection — selector errors are application errors, not library errors
+  const run = async (ctx: Readonly<StepContext>): Promise<StepResult<StepOutput>> => {
+    const frozenCtx = Object.freeze({ ...ctx });
+    const meta = baseMeta(name, frozenCtx);
+
+    // Extract collection
     let items: unknown[];
     try {
-      items = collection(ctx);
+      items = collection(frozenCtx);
     } catch (err) {
-      return {
-        success: false,
-        errors: [toError(err)],
-      };
+      return stepFailure(toError(err), meta, name);
     }
 
     if (stepMode) {
-      return runStepMode(fnOrStep as Step, items, ctx, name, key, executionMap);
+      return runStepMode(fnOrStep as Step, items, frozenCtx, name, key, executionMap, meta);
     } else {
       return runFunctionMode(
         fnOrStep as (item: unknown, ctx: Readonly<StepContext>) => unknown,
         items,
-        ctx,
+        frozenCtx,
         key,
+        name,
+        meta,
       );
     }
   };
@@ -141,7 +146,7 @@ export function map(
     name,
     requires: undefined,
     provides: undefined,
-    run,
+    run: run as Step['run'],
     rollback,
     retry: undefined,
     timeout: undefined,
@@ -159,11 +164,12 @@ async function runStepMode(
   name: string,
   key: string,
   executionMap: WeakMap<object, { items: unknown[]; ctx: StepContext }>,
-): Promise<Result<StepOutput>> {
+  meta: ReturnType<typeof baseMeta>,
+): Promise<StepResult<StepOutput>> {
   const settled = await Promise.allSettled(
     items.map(async (item) => {
       const itemCtx = { ...ctx, ...(item as StepContext) };
-      return runInnerStep(step, itemCtx);
+      return step.run(itemCtx);
     }),
   );
 
@@ -175,7 +181,7 @@ async function runStepMode(
     if (s.status === 'rejected') {
       allErrors.push(toError(s.reason));
     } else if (!s.value.success) {
-      allErrors.push(...s.value.errors);
+      allErrors.push(s.value.error);
     } else {
       succeeded.push({ index: i, output: s.value.data });
     }
@@ -193,14 +199,18 @@ async function runStepMode(
         }
       }
     }
-    return { success: false, errors: allErrors };
+    const error =
+      allErrors.length === 1
+        ? allErrors[0]
+        : new AggregateError(allErrors, `${name}: ${allErrors.length} item(s) failed`);
+    return stepFailure(error, meta, name);
   }
 
   // Collect results in original order
   const results = succeeded.map((s) => s.output);
   const data: StepOutput = { [key]: results };
   executionMap.set(data, { items, ctx: { ...ctx } });
-  return { success: true, data, errors: [] };
+  return stepSuccess(data, meta);
 }
 
 // ---------------------------------------------------------------------------
@@ -212,7 +222,9 @@ async function runFunctionMode(
   items: unknown[],
   ctx: Readonly<StepContext>,
   key: string,
-): Promise<Result<StepOutput>> {
+  stepName: string,
+  meta: ReturnType<typeof baseMeta>,
+): Promise<StepResult<StepOutput>> {
   const settled = await Promise.allSettled(items.map(async (item) => fn(item, ctx)));
 
   const results: unknown[] = [];
@@ -227,9 +239,13 @@ async function runFunctionMode(
   }
 
   if (allErrors.length > 0) {
-    return { success: false, errors: allErrors };
+    const error =
+      allErrors.length === 1
+        ? allErrors[0]
+        : new AggregateError(allErrors, `${stepName}: ${allErrors.length} item(s) failed`);
+    return stepFailure(error, meta, stepName);
   }
 
   const data: StepOutput = { [key]: results };
-  return { success: true, data, errors: [] };
+  return stepSuccess(data, meta);
 }

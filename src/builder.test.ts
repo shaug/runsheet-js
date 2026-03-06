@@ -65,8 +65,8 @@ describe('createPipeline (builder)', () => {
     const bad = await pipeline.run({} as any);
     expect(bad.success).toBe(false);
     if (!bad.success) {
-      expect(bad.errors[0]).toBeInstanceOf(RunsheetError);
-      expect((bad.errors[0] as RunsheetError).code).toBe('ARGS_VALIDATION');
+      expect(bad.error).toBeInstanceOf(RunsheetError);
+      expect((bad.error as RunsheetError).code).toBe('ARGS_VALIDATION');
     }
   });
 

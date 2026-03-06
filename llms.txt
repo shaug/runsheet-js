@@ -7,8 +7,8 @@ focused steps with explicit inputs and outputs, then compose them into pipelines
 that handle context passing, rollback on failure, and schema validation at every
 boundary.
 
-Built on composable-functions for Result semantics. Zod is supported for runtime
-schema validation but is optional — TypeScript generics alone provide
+Uses its own `StepResult` type for result semantics. Zod is supported for
+runtime schema validation but is optional — TypeScript generics alone provide
 compile-time safety.
 
 ## Core concepts
@@ -20,7 +20,9 @@ compile-time safety.
   context).
 - Pipelines run steps sequentially. On failure, rollback handlers execute in
   reverse order with snapshot-based context.
-- Results use `{ success, data, errors }` — never throws.
+- Results use `StepResult<T>` — a discriminated union: `StepSuccess<T>`
+  (`success`, `data`, `meta`) or `StepFailure` (`success`, `error`, `meta`,
+  `failedStep`, `rollback`). Never throws.
 
 ## Quick reference
 
@@ -135,7 +137,7 @@ const result = await pipeline.run({ userId: '123', amount: 50 });
 if (result.success) {
   result.data.chargeId; // string — fully typed
 } else {
-  result.errors; // what went wrong
+  result.error; // what went wrong (single Error)
   result.rollback; // { completed: string[], failed: RollbackFailure[] }
 }
 ```
@@ -160,6 +162,18 @@ const pipeline = buildPipeline({
   strict: true,
 });
 ```
+
+### Pipeline composition
+
+Pipelines are steps — buildPipeline returns a TypedStep. A pipeline can be used
+directly as a step in another pipeline's steps array:
+
+```typescript
+const inner = buildPipeline({ name: 'inner', steps: [a, b] });
+const outer = buildPipeline({ name: 'outer', steps: [inner, c, d] });
+```
+
+If a later outer step fails, the inner pipeline's steps are rolled back.
 
 ### createPipeline (builder API)
 
@@ -390,18 +404,17 @@ createPipeline('checkout')
   .build();
 ```
 
-### PipelineResult
+### StepResult
 
-Every pipeline.run() returns a PipelineResult (never throws):
+Every run() returns a StepResult (never throws):
 
 ```typescript
 // Success
 {
   success: true,
   data: { /* accumulated context */ },
-  errors: [],
   meta: {
-    pipeline: 'checkout',
+    name: 'checkout',
     args: { userId: '123' },
     stepsExecuted: ['fetchUser', 'chargePayment'],
     stepsSkipped: [],
@@ -411,8 +424,8 @@ Every pipeline.run() returns a PipelineResult (never throws):
 // Failure
 {
   success: false,
-  errors: [Error],
-  meta: { pipeline, args, stepsExecuted, stepsSkipped },
+  error: Error,
+  meta: { name, args, stepsExecuted, stepsSkipped },
   failedStep: 'chargePayment',
   rollback: { completed: ['fetchUser'], failed: [] },
 }
@@ -442,11 +455,11 @@ Functions: defineStep, buildPipeline, createPipeline, when, parallel, choice,
 map, flatMap, filter Classes: RunsheetError, RequiresValidationError,
 ProvidesValidationError, ArgsValidationError, PredicateError, TimeoutError,
 RetryExhaustedError, StrictOverlapError, ChoiceNoMatchError, RollbackError,
-UnknownError Types: Step, TypedStep, StepConfig, RetryPolicy, Pipeline,
-PipelineBuilder, PipelineResult, PipelineSuccess, PipelineFailure,
-PipelineExecutionMeta, RollbackReport, RollbackFailure, StepMiddleware,
-StepInfo, StepExecutor, ConditionalStep, RunsheetErrorCode, Result, Success,
-Failure
+UnknownError Types: Step, TypedStep, StepConfig, StepContext, StepOutput,
+StepSchema, RetryPolicy, StepResult, StepSuccess, StepFailure, StepMeta,
+RollbackReport, RollbackFailure, PipelineBuilder, PipelineConfig,
+StepMiddleware, StepInfo, StepExecutor, ConditionalStep, RunsheetErrorCode,
+ExtractRequires, ExtractProvides
 
 ## Important patterns
 

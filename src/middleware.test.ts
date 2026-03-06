@@ -45,7 +45,11 @@ describe('middleware', () => {
     const executedSteps: string[] = [];
 
     const skipAll: StepMiddleware = () => async () => {
-      return { success: true, data: { skipped: true }, errors: [] };
+      return {
+        success: true as const,
+        data: { skipped: true },
+        meta: { name: '', args: {} },
+      };
     };
 
     const tracked = defineStep({
@@ -111,7 +115,7 @@ describe('middleware', () => {
     const errorLogger: StepMiddleware = (_step, next) => async (ctx) => {
       const result = await next(ctx);
       if (!result.success) {
-        errors.push([...result.errors]);
+        errors.push([result.error]);
       }
       return result;
     };
@@ -187,7 +191,7 @@ describe('middleware', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.failedStep).toBe('b');
-      expect(result.errors[0].message).toBe('middleware boom');
+      expect(result.error.message).toBe('middleware boom');
       expect(result.rollback.completed).toEqual(['a']);
     }
     expect(rollbackOrder).toEqual(['a']);

@@ -1,11 +1,15 @@
-import type { Result } from 'composable-functions';
-import type { Step, StepContext, StepOutput } from './types.js';
-import {
-  RequiresValidationError,
-  ProvidesValidationError,
-  UnknownError,
-  type RunsheetError,
-} from './errors.js';
+import type {
+  PipelineFailure,
+  PipelineMeta,
+  PipelineSuccess,
+  RollbackReport,
+  StepContext,
+  StepMeta,
+  StepFailure,
+  StepSuccess,
+  StepOutput,
+} from './types.js';
+import { UnknownError } from './errors.js';
 
 /** Ensure a type satisfies StepContext, falling back to StepContext. */
 export type AsContext<T> = T extends StepContext ? T : StepContext;
@@ -16,61 +20,85 @@ export function toError(err: unknown): Error {
   return new UnknownError(String(err), err);
 }
 
-type ValidationErrorClass = typeof RequiresValidationError | typeof ProvidesValidationError;
+/** Empty rollback report for single-step failures. */
+export const EMPTY_ROLLBACK: RollbackReport = Object.freeze({
+  completed: [] as string[],
+  failed: [] as never[],
+});
 
 /**
- * Validate data against a step's requires or provides schema.
- * Returns an array of errors on failure, or null on success/no schema.
+ * Create a {@link StepMeta} for a step execution.
  *
- * This is the combinator variant. See pipeline.ts validateSchema for the
- * pipeline-level variant (which also returns parsed data for passthrough).
+ * Used by `defineStep` and combinators. Contains only the step's
+ * name and the arguments it received.
  */
-export function validateInnerSchema(
-  schema: Step['requires'] | Step['provides'],
-  data: unknown,
-  label: string,
-  ErrorClass: ValidationErrorClass,
-): RunsheetError[] | null {
-  if (!schema) return null;
-  const parsed = schema.safeParse(data);
-  if (parsed.success) return null;
-  return parsed.error.issues.map(
-    (issue) => new ErrorClass(`${label}: ${issue.path.join('.')}: ${issue.message}`),
-  );
+export function baseMeta(name: string, args: Readonly<StepContext>): StepMeta {
+  return Object.freeze({ name, args });
 }
 
 /**
- * Run a single inner step with requires/provides validation.
+ * Create a {@link PipelineMeta} for a pipeline execution.
  *
- * Shared lifecycle used by parallel, choice, and map combinators:
- * validate requires → run → validate provides.
- *
- * Unlike the pipeline-level executor, inner steps do not go through
- * middleware. Middleware wraps the composite combinator step as a whole,
- * not the individual inner steps.
+ * Used by `buildPipeline` to produce results with orchestration
+ * detail (which steps ran and which were skipped).
  */
-export async function runInnerStep(
-  step: Step,
-  ctx: Readonly<StepContext>,
-): Promise<Result<StepOutput>> {
-  const requiresErrors = validateInnerSchema(
-    step.requires,
-    ctx,
-    `${step.name} requires`,
-    RequiresValidationError,
-  );
-  if (requiresErrors) return { success: false, errors: requiresErrors };
+export function pipelineMeta(
+  name: string,
+  args: Readonly<StepContext>,
+  stepsExecuted: readonly string[],
+  stepsSkipped: readonly string[],
+): PipelineMeta {
+  return Object.freeze({ name, args, stepsExecuted, stepsSkipped });
+}
 
-  const result = await step.run(ctx);
-  if (!result.success) return result;
+/**
+ * Create a successful {@link StepResult}.
+ *
+ * The returned object is frozen (immutable). Used by `defineStep`
+ * and all combinators to produce consistent success results.
+ */
+export function stepSuccess<T extends StepOutput>(data: T, meta: StepMeta): StepSuccess<T> {
+  return Object.freeze({ success: true, data, meta });
+}
 
-  const providesErrors = validateInnerSchema(
-    step.provides,
-    result.data,
-    `${step.name} provides`,
-    ProvidesValidationError,
-  );
-  if (providesErrors) return { success: false, errors: providesErrors };
+/**
+ * Create a failed {@link StepResult}.
+ *
+ * The returned object is frozen (immutable). When no rollback
+ * report is provided, defaults to {@link EMPTY_ROLLBACK} (no
+ * rollbacks attempted).
+ */
+export function stepFailure(
+  error: Error,
+  meta: StepMeta,
+  failedStep: string,
+  rollback: RollbackReport = EMPTY_ROLLBACK,
+): StepFailure {
+  return Object.freeze({ success: false, error, meta, failedStep, rollback });
+}
 
-  return result;
+/**
+ * Create a successful {@link PipelineResult}.
+ *
+ * Like {@link stepSuccess} but with {@link PipelineMeta}.
+ */
+export function pipelineSuccess<T extends StepOutput>(
+  data: T,
+  meta: PipelineMeta,
+): PipelineSuccess<T> {
+  return Object.freeze({ success: true, data, meta });
+}
+
+/**
+ * Create a failed {@link PipelineResult}.
+ *
+ * Like {@link stepFailure} but with {@link PipelineMeta}.
+ */
+export function pipelineFailure(
+  error: Error,
+  meta: PipelineMeta,
+  failedStep: string,
+  rollback: RollbackReport = EMPTY_ROLLBACK,
+): PipelineFailure {
+  return Object.freeze({ success: false, error, meta, failedStep, rollback });
 }

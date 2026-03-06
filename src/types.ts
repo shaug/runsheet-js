@@ -1,4 +1,29 @@
-import type { Failure, ParserSchema, Result, Success } from 'composable-functions';
+// ---------------------------------------------------------------------------
+// Schema type — compatible with Zod and any library that implements safeParse
+// ---------------------------------------------------------------------------
+
+/**
+ * A schema that can parse/validate unknown data.
+ *
+ * This is the structural interface that Zod schemas (and other schema
+ * libraries) satisfy. runsheet does not depend on any specific schema
+ * library — any object with a `safeParse` method works.
+ *
+ * @typeParam T - The validated output type.
+ */
+export type StepSchema<T> = {
+  safeParse(data: unknown):
+    | { success: true; data: T }
+    | {
+        success: false;
+        error: {
+          issues: readonly {
+            path: readonly (string | number)[];
+            message: string;
+          }[];
+        };
+      };
+};
 
 // ---------------------------------------------------------------------------
 // Step types
@@ -39,18 +64,18 @@ export type Step = {
   /** Unique name identifying this step in metadata and rollback reports. */
   readonly name: string;
   /** Optional schema that validates the accumulated context before `run`. */
-  readonly requires: ParserSchema<StepContext> | undefined;
+  readonly requires: StepSchema<StepContext> | undefined;
   /** Optional schema that validates the step's output after `run`. */
-  readonly provides: ParserSchema<StepOutput> | undefined;
+  readonly provides: StepSchema<StepOutput> | undefined;
   /**
    * Execute the step. Receives the accumulated context and returns a
-   * `Result` — either `{ success: true, data }` or
-   * `{ success: false, errors }`.
+   * {@link StepResult} — either a success with `data` or a failure with
+   * `error`, `failedStep`, and `rollback`.
    *
    * Step authors never call this directly; the pipeline engine calls it
-   * after validating `requires` and wrapping with middleware.
+   * after wrapping with middleware.
    */
-  readonly run: (ctx: Readonly<StepContext>) => Promise<Result<StepOutput>>;
+  readonly run: (ctx: Readonly<StepContext>) => Promise<StepResult<StepOutput>>;
   /**
    * Optional rollback handler, called when a later step fails.
    *
@@ -91,7 +116,7 @@ declare const ProvidesBrand: unique symbol;
  * @example
  * ```ts
  * // Hover over `step.run` to see:
- * //   (ctx: Readonly<{ amount: number }>) => Promise<Result<{ chargeId: string }>>
+ * //   (ctx: Readonly<{ amount: number }>) => Promise<StepResult<{ chargeId: string }>>
  * const step = defineStep({
  *   name: 'charge',
  *   requires: z.object({ amount: z.number() }),
@@ -107,11 +132,11 @@ export type TypedStep<
   readonly [RequiresBrand]: Requires;
   readonly [ProvidesBrand]: Provides;
   /** Optional schema that validates the accumulated context before `run`. */
-  readonly requires: ParserSchema<Requires> | undefined;
+  readonly requires: StepSchema<Requires> | undefined;
   /** Optional schema that validates the step's output after `run`. */
-  readonly provides: ParserSchema<Provides> | undefined;
+  readonly provides: StepSchema<Provides> | undefined;
   /** Execute the step with concrete input/output types. */
-  readonly run: (ctx: Readonly<Requires>) => Promise<Result<Provides>>;
+  readonly run: (ctx: Readonly<Requires>) => Promise<StepResult<Provides>>;
   /**
    * Optional rollback handler, called when a later step fails.
    *
@@ -189,23 +214,23 @@ export type StepConfig<Requires extends StepContext, Provides extends StepContex
   /**
    * Optional Zod (or Standard Schema compatible) schema that validates
    * the accumulated context before `run` is called. When provided, a
-   * schema validation failure produces a `Result` error — the step's
+   * schema validation failure produces a `StepResult` error — the step's
    * `run` function is never invoked.
    */
-  requires?: ParserSchema<Requires>;
+  requires?: StepSchema<Requires>;
   /**
    * Optional Zod (or Standard Schema compatible) schema that validates
    * the step's output after `run` returns. When provided, a schema
-   * validation failure produces a `Result` error even though `run`
+   * validation failure produces a `StepResult` error even though `run`
    * succeeded.
    */
-  provides?: ParserSchema<Provides>;
+  provides?: StepSchema<Provides>;
   /**
    * The step implementation. Receives the accumulated context (frozen)
    * and returns the step's output. Can be sync or async.
    *
    * To signal failure, throw an error. The pipeline catches it and
-   * produces a `Result` failure — do not return failure objects.
+   * produces a `StepResult` failure — do not return failure objects.
    *
    * @param ctx - The frozen accumulated context up to this point.
    * @returns The step's output, which is merged into the accumulated context.
@@ -238,7 +263,7 @@ export type StepConfig<Requires extends StepContext, Provides extends StepContex
 };
 
 // ---------------------------------------------------------------------------
-// Pipeline result types
+// Step result types
 // ---------------------------------------------------------------------------
 
 /**
@@ -254,7 +279,7 @@ export type RollbackFailure = {
 };
 
 /**
- * Summary of rollback execution after a pipeline failure.
+ * Summary of rollback execution after a step or pipeline failure.
  *
  * Rollback is best-effort: every completed step's rollback handler is
  * attempted in reverse order, regardless of whether earlier handlers
@@ -268,14 +293,24 @@ export type RollbackReport = {
 };
 
 /**
- * Metadata about a pipeline execution, present on both success and failure
+ * Metadata about a step execution, present on both success and failure
  * results. Useful for logging, debugging, and observability.
  */
-export type PipelineExecutionMeta = {
-  /** The pipeline's name as passed to `buildPipeline` or `createPipeline`. */
-  readonly pipeline: string;
-  /** The original arguments passed to `pipeline.run()`. */
+export type StepMeta = {
+  /** The step's name (or pipeline name for pipeline-steps). */
+  readonly name: string;
+  /** The original arguments/context passed to `step.run()`. */
   readonly args: Readonly<StepContext>;
+};
+
+/**
+ * Extended metadata for pipeline execution results.
+ *
+ * Includes orchestration detail — which steps ran and which were
+ * skipped — on top of the base {@link StepMeta}. Only present on
+ * results from `buildPipeline()` / `createPipeline().build()`.
+ */
+export type PipelineMeta = StepMeta & {
   /** Names of steps that executed successfully, in order. */
   readonly stepsExecuted: readonly string[];
   /** Names of conditional steps that were skipped (predicate returned false). */
@@ -283,31 +318,33 @@ export type PipelineExecutionMeta = {
 };
 
 /**
- * A successful pipeline result.
+ * A successful step result.
  *
- * Extends composable-functions' `Success<T>` with pipeline execution
- * metadata. The `data` property contains the fully accumulated context
- * (initial args merged with all step outputs).
+ * The `data` property contains the step's output (or the fully
+ * accumulated context for pipeline-steps).
  *
- * @typeParam T - The accumulated context type.
+ * @typeParam T - The output type.
  */
-export type PipelineSuccess<T> = Success<T> & {
-  /** Pipeline execution metadata. */
-  readonly meta: PipelineExecutionMeta;
+export type StepSuccess<T> = {
+  readonly success: true;
+  /** The step's output data. */
+  readonly data: T;
+  /** Step execution metadata. */
+  readonly meta: StepMeta;
 };
 
 /**
- * A failed pipeline result.
+ * A failed step result.
  *
- * Extends composable-functions' `Failure` with the name of the step that
- * failed, a rollback report, and pipeline execution metadata.
- *
- * On failure, rollback handlers for all previously completed steps are
- * executed in reverse order before this result is returned.
+ * Contains the error that caused the failure, the name of the step
+ * that failed, and a rollback report.
  */
-export type PipelineFailure = Failure & {
-  /** Pipeline execution metadata. */
-  readonly meta: PipelineExecutionMeta;
+export type StepFailure = {
+  readonly success: false;
+  /** The error that caused the failure. Use `AggregateError` when multiple errors occur. */
+  readonly error: Error;
+  /** Step execution metadata. */
+  readonly meta: StepMeta;
   /** Name of the step that failed. */
   readonly failedStep: string;
   /** Report of which rollback handlers succeeded and which threw. */
@@ -315,22 +352,110 @@ export type PipelineFailure = Failure & {
 };
 
 /**
- * The result of running a pipeline — either a success or a failure.
+ * The result of running a step — either a success or a failure.
  *
  * Use the `success` discriminant to narrow:
  *
  * ```ts
- * const result = await pipeline.run(args);
+ * const result = await step.run(ctx);
  * if (result.success) {
- *   result.data;       // fully typed accumulated context
+ *   result.data;       // the step's output
  *   result.meta;       // execution metadata
  * } else {
- *   result.errors;     // what went wrong
+ *   result.error;      // what went wrong
  *   result.failedStep; // which step failed
  *   result.rollback;   // { completed: [...], failed: [...] }
  * }
  * ```
  *
- * @typeParam T - The accumulated context type on success.
+ * @typeParam T - The output type on success.
+ */
+export type StepResult<T> = StepSuccess<T> | StepFailure;
+
+// ---------------------------------------------------------------------------
+// Pipeline result types (extends StepResult with richer metadata)
+// ---------------------------------------------------------------------------
+
+/**
+ * A successful pipeline result.
+ *
+ * Identical to {@link StepSuccess} but with {@link PipelineMeta}
+ * instead of {@link StepMeta}, providing orchestration detail.
+ *
+ * @typeParam T - The accumulated output type.
+ */
+export type PipelineSuccess<T> = {
+  readonly success: true;
+  /** The accumulated context after all steps. */
+  readonly data: T;
+  /** Pipeline execution metadata including step tracking. */
+  readonly meta: PipelineMeta;
+};
+
+/**
+ * A failed pipeline result.
+ *
+ * Identical to {@link StepFailure} but with {@link PipelineMeta}
+ * instead of {@link StepMeta}, providing orchestration detail.
+ */
+export type PipelineFailure = {
+  readonly success: false;
+  /** The error that caused the failure. */
+  readonly error: Error;
+  /** Pipeline execution metadata including step tracking. */
+  readonly meta: PipelineMeta;
+  /** Name of the step that failed. */
+  readonly failedStep: string;
+  /** Report of which rollback handlers succeeded and which threw. */
+  readonly rollback: RollbackReport;
+};
+
+/**
+ * The result of running a pipeline — extends {@link StepResult} with
+ * richer metadata.
+ *
+ * `PipelineResult<T>` is assignable to `StepResult<T>`, so pipelines
+ * satisfy the `Step` interface while providing orchestration detail
+ * to callers who know they have a pipeline.
+ *
+ * ```ts
+ * const pipeline = buildPipeline({ name: 'checkout', steps: [...] });
+ * const result = await pipeline.run({ orderId: '123' });
+ * if (result.success) {
+ *   result.meta.stepsExecuted; // string[] — which steps ran
+ * } else {
+ *   result.meta.stepsSkipped;  // string[] — which were skipped
+ *   result.failedStep;         // which step failed
+ *   result.rollback;           // { completed, failed }
+ * }
+ * ```
+ *
+ * @typeParam T - The accumulated output type on success.
  */
 export type PipelineResult<T> = PipelineSuccess<T> | PipelineFailure;
+
+// ---------------------------------------------------------------------------
+// TypedPipeline — a step whose run() returns PipelineResult
+// ---------------------------------------------------------------------------
+
+/**
+ * A pipeline with compile-time type information and rich result types.
+ *
+ * Extends {@link TypedStep} but narrows `run()` to return
+ * {@link PipelineResult} instead of {@link StepResult}. This is the
+ * type returned by `buildPipeline()` and `createPipeline().build()`.
+ *
+ * Since `PipelineResult<T>` is assignable to `StepResult<T>`, a
+ * `TypedPipeline` can be used anywhere a `TypedStep` is expected
+ * (e.g., in another pipeline's step array).
+ *
+ * @typeParam Args - The pipeline's input type.
+ * @typeParam Provides - The accumulated output type.
+ */
+export type TypedPipeline<
+  Args extends StepContext = StepContext,
+  Provides extends StepContext = StepContext,
+> = Omit<TypedStep<Args, Provides>, 'run'> & {
+  /** Execute the pipeline and return a {@link PipelineResult}. */
+  readonly run: (ctx: Readonly<Args>) => Promise<PipelineResult<Provides>>;
+};

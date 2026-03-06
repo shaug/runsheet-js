@@ -85,7 +85,7 @@ describe('map', () => {
       const result = await pipeline.run({ items: [1, 2, 3] });
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors.some((e) => e.message.includes('item 2 failed'))).toBe(true);
+        expect(result.error.message).toContain('item 2 failed');
       }
     });
 
@@ -125,8 +125,8 @@ describe('map', () => {
       const result = await pipeline.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors[0]).toBeInstanceOf(Error);
-        expect(result.errors[0].message).toBe('collection boom');
+        expect(result.error).toBeInstanceOf(Error);
+        expect(result.error.message).toBe('collection boom');
       }
     });
 
@@ -186,8 +186,8 @@ describe('map', () => {
       const result = await pipeline.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors[0]).toBeInstanceOf(RunsheetError);
-        expect((result.errors[0] as RunsheetError).code).toBe('REQUIRES_VALIDATION');
+        expect(result.error).toBeInstanceOf(RunsheetError);
+        expect((result.error as RunsheetError).code).toBe('REQUIRES_VALIDATION');
       }
     });
 
@@ -236,8 +236,8 @@ describe('map', () => {
       const result = await pipeline.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors[0]).toBeInstanceOf(RunsheetError);
-        expect((result.errors[0] as RunsheetError).code).toBe('PROVIDES_VALIDATION');
+        expect(result.error).toBeInstanceOf(RunsheetError);
+        expect((result.error as RunsheetError).code).toBe('PROVIDES_VALIDATION');
       }
     });
 

@@ -1,6 +1,5 @@
-import type { Result } from 'composable-functions';
-import type { Step, StepContext, StepOutput, TypedStep } from './types.js';
-import { toError } from './internal.js';
+import type { Step, StepContext, StepOutput, StepResult, TypedStep } from './types.js';
+import { toError, baseMeta, stepSuccess, stepFailure } from './internal.js';
 
 // ---------------------------------------------------------------------------
 // flatMap()
@@ -24,7 +23,11 @@ import { toError } from './internal.js';
  * const pipeline = buildPipeline({
  *   name: 'process',
  *   steps: [
- *     flatMap('lineItems', (ctx) => ctx.orders, (order) => order.items),
+ *     flatMap(
+ *       'lineItems',
+ *       (ctx) => ctx.orders,
+ *       (order) => order.items,
+ *     ),
  *   ],
  * });
  *
@@ -47,22 +50,24 @@ export function flatMap<K extends string, Item, Result>(
 ): TypedStep<StepContext, Record<K, Result[]>> {
   const name = `flatMap(${key})`;
 
-  const run: Step['run'] = async (ctx) => {
+  const run = async (ctx: Readonly<StepContext>): Promise<StepResult<StepOutput>> => {
+    const frozenCtx = Object.freeze({ ...ctx });
+    const meta = baseMeta(name, frozenCtx);
+
     let items: unknown[];
     try {
-      items = collection(ctx);
+      items = collection(frozenCtx);
     } catch (err) {
-      return {
-        success: false,
-        errors: [toError(err)],
-      };
+      return stepFailure(toError(err), meta, name);
     }
 
     return runFlatMap(
       items,
-      ctx,
+      frozenCtx,
       fn as (item: unknown, ctx: Readonly<StepContext>) => unknown[] | Promise<unknown[]>,
       key,
+      name,
+      meta,
     );
   };
 
@@ -70,7 +75,7 @@ export function flatMap<K extends string, Item, Result>(
     name,
     requires: undefined,
     provides: undefined,
-    run,
+    run: run as Step['run'],
     rollback: undefined,
     retry: undefined,
     timeout: undefined,
@@ -86,7 +91,9 @@ async function runFlatMap(
   ctx: Readonly<StepContext>,
   fn: (item: unknown, ctx: Readonly<StepContext>) => unknown[] | Promise<unknown[]>,
   key: string,
-): Promise<Result<StepOutput>> {
+  name: string,
+  meta: ReturnType<typeof baseMeta>,
+): Promise<StepResult<StepOutput>> {
   const settled = await Promise.allSettled(items.map(async (item) => fn(item, ctx)));
 
   const results: unknown[] = [];
@@ -101,9 +108,13 @@ async function runFlatMap(
   }
 
   if (allErrors.length > 0) {
-    return { success: false, errors: allErrors };
+    const error =
+      allErrors.length === 1
+        ? allErrors[0]
+        : new AggregateError(allErrors, `${name}: ${allErrors.length} callback(s) failed`);
+    return stepFailure(error, meta, name);
   }
 
   const data: StepOutput = { [key]: results };
-  return { success: true, data, errors: [] };
+  return stepSuccess(data, meta);
 }

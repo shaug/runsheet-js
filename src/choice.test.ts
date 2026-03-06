@@ -214,8 +214,8 @@ describe('choice', () => {
       const result = await pipeline.run({ method: 'crypto', amount: 100 });
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors[0]).toBeInstanceOf(RunsheetError);
-        expect((result.errors[0] as RunsheetError).code).toBe('CHOICE_NO_MATCH');
+        expect(result.error).toBeInstanceOf(RunsheetError);
+        expect((result.error as RunsheetError).code).toBe('CHOICE_NO_MATCH');
       }
     });
 
@@ -235,8 +235,8 @@ describe('choice', () => {
       const result = await pipeline.run({ amount: 100 });
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors[0]).toBeInstanceOf(RunsheetError);
-        expect((result.errors[0] as RunsheetError).code).toBe('PREDICATE');
+        expect(result.error).toBeInstanceOf(RunsheetError);
+        expect((result.error as RunsheetError).code).toBe('PREDICATE');
       }
     });
 
@@ -250,8 +250,8 @@ describe('choice', () => {
       const result = await pipeline.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors[0]).toBeInstanceOf(RunsheetError);
-        expect((result.errors[0] as RunsheetError).code).toBe('REQUIRES_VALIDATION');
+        expect(result.error).toBeInstanceOf(RunsheetError);
+        expect((result.error as RunsheetError).code).toBe('REQUIRES_VALIDATION');
       }
     });
 
@@ -270,8 +270,8 @@ describe('choice', () => {
       const result = await pipeline.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors[0]).toBeInstanceOf(RunsheetError);
-        expect((result.errors[0] as RunsheetError).code).toBe('PROVIDES_VALIDATION');
+        expect(result.error).toBeInstanceOf(RunsheetError);
+        expect((result.error as RunsheetError).code).toBe('PROVIDES_VALIDATION');
       }
     });
 
@@ -291,7 +291,7 @@ describe('choice', () => {
       const result = await pipeline.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors.some((e) => e.message.includes('step boom'))).toBe(true);
+        expect(result.error.message.includes('step boom')).toBe(true);
       }
     });
   });

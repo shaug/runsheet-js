@@ -168,7 +168,7 @@ describe('filter', () => {
       const result = await pipeline.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors.some((e) => e.message.includes('predicate boom'))).toBe(true);
+        expect(result.error.message).toContain('predicate boom');
       }
     });
 
@@ -189,7 +189,7 @@ describe('filter', () => {
       const result = await pipeline.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors[0].message).toBe('selector boom');
+        expect(result.error.message).toBe('selector boom');
       }
     });
 
@@ -210,7 +210,7 @@ describe('filter', () => {
       const result = await pipeline.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors.some((e) => e.message.includes('async boom'))).toBe(true);
+        expect(result.error.message).toContain('async boom');
       }
     });
   });

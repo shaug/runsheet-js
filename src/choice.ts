@@ -3,11 +3,13 @@ import type {
   ExtractRequires,
   Step,
   StepContext,
+  StepOutput,
+  StepResult,
   TypedStep,
   UnionToIntersection,
 } from './types.js';
 import type { AsContext } from './internal.js';
-import { runInnerStep, toError } from './internal.js';
+import { toError, baseMeta, stepSuccess, stepFailure } from './internal.js';
 import { ChoiceNoMatchError, PredicateError, RollbackError } from './errors.js';
 
 /** A [predicate, step] tuple used by {@link choice}. */
@@ -57,8 +59,8 @@ function normalizeBranches(
  * A bare step (without a predicate tuple) can be passed as the last argument
  * to serve as a default branch — it is equivalent to `[() => true, step]`.
  *
- * All branches should provide the same output shape so that subsequent
- * steps can rely on a consistent context type.
+ * All branches should provide the same output shape so that
+ * subsequent steps can rely on a consistent context type.
  *
  * @example
  * ```ts
@@ -104,41 +106,41 @@ export function choice(...args: (BranchTuple | TypedStep)[]): TypedStep<StepCont
 
   // Track which branch ran per execution for rollback.
   // INVARIANT: This relies on pipeline.ts storing the exact result.data
-  // reference in its outputs array (pipeline.ts:344-345). If the pipeline
-  // ever clones result.data, this WeakMap lookup will silently fail.
+  // reference in its outputs array. If the pipeline ever clones
+  // result.data, this WeakMap lookup will silently fail.
   const branchMap = new WeakMap<object, number>();
 
-  const run: Step['run'] = async (ctx) => {
+  const run = async (ctx: Readonly<StepContext>): Promise<StepResult<StepOutput>> => {
+    const frozenCtx = Object.freeze({ ...ctx });
+    const meta = baseMeta(name, frozenCtx);
+
     for (let i = 0; i < innerBranches.length; i++) {
       const [predicate, step] = innerBranches[i];
 
       // Evaluate predicate
       let matches: boolean;
       try {
-        matches = predicate(ctx);
+        matches = predicate(frozenCtx);
       } catch (err) {
         const cause = toError(err);
         const error = new PredicateError(`${name} predicate: ${cause.message}`);
         error.cause = cause;
-        return { success: false, errors: [error] };
+        return stepFailure(error, meta, name);
       }
 
       if (!matches) continue;
 
-      const result = await runInnerStep(step, ctx);
-      if (!result.success) return result;
+      const result = await step.run(frozenCtx);
+      if (!result.success) return stepFailure(result.error, meta, name);
 
       // Track which branch ran for rollback
       branchMap.set(result.data, i);
 
-      return { success: true, data: result.data, errors: [] };
+      return stepSuccess(result.data, meta);
     }
 
     // No branch matched
-    return {
-      success: false,
-      errors: [new ChoiceNoMatchError(`${name}: no branch matched`)],
-    };
+    return stepFailure(new ChoiceNoMatchError(`${name}: no branch matched`), meta, name);
   };
 
   // Rollback: only the matched branch needs rollback.
@@ -161,7 +163,7 @@ export function choice(...args: (BranchTuple | TypedStep)[]): TypedStep<StepCont
     name,
     requires: undefined,
     provides: undefined,
-    run,
+    run: run as Step['run'],
     rollback,
     retry: undefined,
     timeout: undefined,

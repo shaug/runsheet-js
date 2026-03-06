@@ -76,7 +76,18 @@ simplified markup format.
 - `Step` — runtime, non-generic type used by the pipeline engine
 - `TypedStep<Requires, Provides>` — compile-time typed wrapper returned by
   `defineStep()`, uses phantom brands for type tracking
+- `TypedPipeline<Args, Provides>` — extends `TypedStep` with `run()` returning
+  `PipelineResult` instead of `StepResult`
+- Pipelines ARE steps — `buildPipeline()` returns a `TypedPipeline`, which is
+  assignable to `TypedStep` for composition
+- `StepResult<T>` — discriminated union (`StepSuccess<T> | StepFailure`) with
+  single `error: Error` on failure (not an array)
+- `PipelineResult<T>` — extends `StepResult<T>` with `PipelineMeta`
+  (`stepsExecuted`, `stepsSkipped`). Only on pipeline results.
+- `StepMeta` is slim (`name`, `args`); `PipelineMeta extends StepMeta` adds
+  orchestration detail
 - Single type-erasure cast point is in `defineStep()` — do not add others
+  (except `buildPipeline` which also casts)
 - `buildPipeline` infers accumulated output types from the steps array via
   `ExtractProvides` + `UnionToIntersection`
 - Context is always `Object.freeze`'d at every step boundary

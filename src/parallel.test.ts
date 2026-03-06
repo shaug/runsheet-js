@@ -120,7 +120,7 @@ describe('parallel', () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.failedStep).toBe('parallel(stepA, failing)');
-        expect(result.errors.some((e) => e.message.includes('boom'))).toBe(true);
+        expect(result.error.message).toContain('boom');
       }
     });
 
@@ -140,8 +140,8 @@ describe('parallel', () => {
       const result = await pipeline.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors[0]).toBeInstanceOf(RunsheetError);
-        expect((result.errors[0] as RunsheetError).code).toBe('REQUIRES_VALIDATION');
+        expect(result.error).toBeInstanceOf(RunsheetError);
+        expect((result.error as RunsheetError).code).toBe('REQUIRES_VALIDATION');
       }
     });
 
@@ -161,8 +161,8 @@ describe('parallel', () => {
       const result = await pipeline.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors[0]).toBeInstanceOf(RunsheetError);
-        expect((result.errors[0] as RunsheetError).code).toBe('PROVIDES_VALIDATION');
+        expect(result.error).toBeInstanceOf(RunsheetError);
+        expect((result.error as RunsheetError).code).toBe('PROVIDES_VALIDATION');
       }
     });
   });
@@ -337,8 +337,8 @@ describe('parallel', () => {
       const result = await pipeline.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors[0]).toBeInstanceOf(RunsheetError);
-        expect((result.errors[0] as RunsheetError).code).toBe('PREDICATE');
+        expect(result.error).toBeInstanceOf(RunsheetError);
+        expect((result.error as RunsheetError).code).toBe('PREDICATE');
       }
     });
   });
@@ -374,9 +374,8 @@ describe('parallel', () => {
       const result = await pipeline.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors.some((e) => e instanceof RunsheetError && e.code === 'TIMEOUT')).toBe(
-          true,
-        );
+        expect(result.error).toBeInstanceOf(RunsheetError);
+        expect((result.error as RunsheetError).code).toBe('TIMEOUT');
       }
     });
   });

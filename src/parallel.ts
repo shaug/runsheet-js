@@ -4,11 +4,12 @@ import type {
   Step,
   StepContext,
   StepOutput,
+  StepResult,
   TypedStep,
   UnionToIntersection,
 } from './types.js';
 import type { AsContext } from './internal.js';
-import { runInnerStep, toError } from './internal.js';
+import { toError, baseMeta, stepSuccess, stepFailure } from './internal.js';
 import { PredicateError, RollbackError } from './errors.js';
 import { isConditionalStep } from './when.js';
 
@@ -20,7 +21,7 @@ type InnerResult = {
   step: Step;
   skipped: boolean;
   output?: StepOutput;
-  errors?: Error[];
+  error?: Error;
 };
 
 // ---------------------------------------------------------------------------
@@ -37,11 +38,11 @@ async function executeInner(step: Step, ctx: Readonly<StepContext>): Promise<Inn
     const cause = toError(err);
     const error = new PredicateError(`${step.name} predicate: ${cause.message}`);
     error.cause = cause;
-    return { step, skipped: false, errors: [error] };
+    return { step, skipped: false, error };
   }
 
-  const result = await runInnerStep(step, ctx);
-  if (!result.success) return { step, skipped: false, errors: [...result.errors] };
+  const result = await step.run(ctx);
+  if (!result.success) return { step, skipped: false, error: result.error };
   return { step, skipped: false, output: result.data };
 }
 
@@ -92,8 +93,13 @@ export function parallel<S extends readonly TypedStep[]>(
   const innerSteps: readonly Step[] = steps;
 
   // ----- run: execute all inner steps concurrently ----- //
-  const run: Step['run'] = async (ctx) => {
-    const settled = await Promise.allSettled(innerSteps.map((step) => executeInner(step, ctx)));
+  const run = async (ctx: Readonly<StepContext>): Promise<StepResult<StepOutput>> => {
+    const frozenCtx = Object.freeze({ ...ctx });
+    const meta = baseMeta(name, frozenCtx);
+
+    const settled = await Promise.allSettled(
+      innerSteps.map((step) => executeInner(step, frozenCtx)),
+    );
 
     const succeeded: { step: Step; output: StepOutput }[] = [];
     const allErrors: Error[] = [];
@@ -106,8 +112,8 @@ export function parallel<S extends readonly TypedStep[]>(
         if (r.skipped) continue;
         if (r.output) {
           succeeded.push({ step: r.step, output: r.output });
-        } else if (r.errors) {
-          allErrors.push(...r.errors);
+        } else if (r.error) {
+          allErrors.push(r.error);
         }
       }
     }
@@ -118,7 +124,7 @@ export function parallel<S extends readonly TypedStep[]>(
         const { step, output } = succeeded[i];
         if (step.rollback) {
           try {
-            await step.rollback(ctx, output);
+            await step.rollback(frozenCtx, output);
           } catch {
             // Best-effort — inner rollback errors during partial failure
             // are not surfaced. The pipeline's own rollback report covers
@@ -126,7 +132,11 @@ export function parallel<S extends readonly TypedStep[]>(
           }
         }
       }
-      return { success: false, errors: allErrors };
+      const error =
+        allErrors.length === 1
+          ? allErrors[0]
+          : new AggregateError(allErrors, `${name}: ${allErrors.length} step(s) failed`);
+      return stepFailure(error, meta, name);
     }
 
     // Merge outputs in array order (deterministic)
@@ -135,7 +145,7 @@ export function parallel<S extends readonly TypedStep[]>(
       Object.assign(merged, output);
     }
 
-    return { success: true, data: merged, errors: [] };
+    return stepSuccess(merged, meta);
   };
 
   // ----- rollback: called when a later sequential step fails ----- //
@@ -164,7 +174,7 @@ export function parallel<S extends readonly TypedStep[]>(
     name,
     requires: undefined,
     provides: undefined,
-    run,
+    run: run as Step['run'],
     rollback,
     retry: undefined,
     timeout: undefined,

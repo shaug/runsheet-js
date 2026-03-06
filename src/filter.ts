@@ -1,6 +1,5 @@
-import type { Result } from 'composable-functions';
-import type { Step, StepContext, StepOutput, TypedStep } from './types.js';
-import { toError } from './internal.js';
+import type { Step, StepContext, StepOutput, StepResult, TypedStep } from './types.js';
+import { toError, baseMeta, stepSuccess, stepFailure } from './internal.js';
 
 // ---------------------------------------------------------------------------
 // filter()
@@ -11,8 +10,9 @@ import { toError } from './internal.js';
  *
  * Extracts a collection from the pipeline context, evaluates the
  * predicate for each item via `Promise.allSettled`, and collects
- * items that pass into an array under the given key. Original order
- * is preserved.
+ * items that pass into an array under the given key.
+ *
+ * Original order is preserved.
  *
  * The predicate can be sync or async. If any predicate throws, the
  * entire step fails — no partial results are returned.
@@ -25,7 +25,11 @@ import { toError } from './internal.js';
  * const pipeline = buildPipeline({
  *   name: 'notify',
  *   steps: [
- *     filter('eligible', (ctx) => ctx.users, (user) => user.optedIn),
+ *     filter(
+ *       'eligible',
+ *       (ctx) => ctx.users,
+ *       (user) => user.optedIn,
+ *     ),
  *     map('emails', (ctx) => ctx.eligible, sendEmail),
  *   ],
  * });
@@ -49,22 +53,24 @@ export function filter<K extends string, Item>(
 ): TypedStep<StepContext, Record<K, Item[]>> {
   const name = `filter(${key})`;
 
-  const run: Step['run'] = async (ctx) => {
+  const run = async (ctx: Readonly<StepContext>): Promise<StepResult<StepOutput>> => {
+    const frozenCtx = Object.freeze({ ...ctx });
+    const meta = baseMeta(name, frozenCtx);
+
     let items: unknown[];
     try {
-      items = collection(ctx);
+      items = collection(frozenCtx);
     } catch (err) {
-      return {
-        success: false,
-        errors: [toError(err)],
-      };
+      return stepFailure(toError(err), meta, name);
     }
 
     return runFilter(
       items,
-      ctx,
+      frozenCtx,
       predicate as (item: unknown, ctx: Readonly<StepContext>) => boolean | Promise<boolean>,
       key,
+      name,
+      meta,
     );
   };
 
@@ -72,7 +78,7 @@ export function filter<K extends string, Item>(
     name,
     requires: undefined,
     provides: undefined,
-    run,
+    run: run as Step['run'],
     rollback: undefined,
     retry: undefined,
     timeout: undefined,
@@ -88,7 +94,9 @@ async function runFilter(
   ctx: Readonly<StepContext>,
   predicate: (item: unknown, ctx: Readonly<StepContext>) => boolean | Promise<boolean>,
   key: string,
-): Promise<Result<StepOutput>> {
+  name: string,
+  meta: ReturnType<typeof baseMeta>,
+): Promise<StepResult<StepOutput>> {
   const settled = await Promise.allSettled(items.map(async (item) => predicate(item, ctx)));
 
   const results: unknown[] = [];
@@ -104,9 +112,13 @@ async function runFilter(
   }
 
   if (allErrors.length > 0) {
-    return { success: false, errors: allErrors };
+    const error =
+      allErrors.length === 1
+        ? allErrors[0]
+        : new AggregateError(allErrors, `${name}: ${allErrors.length} predicate(s) failed`);
+    return stepFailure(error, meta, name);
   }
 
   const data: StepOutput = { [key]: results };
-  return { success: true, data, errors: [] };
+  return stepSuccess(data, meta);
 }

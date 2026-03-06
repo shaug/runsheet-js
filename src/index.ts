@@ -14,7 +14,7 @@ export {
 } from './errors.js';
 export type { RunsheetErrorCode } from './errors.js';
 export { buildPipeline } from './pipeline.js';
-export type { Pipeline, PipelineConfig } from './pipeline.js';
+export type { PipelineConfig } from './pipeline.js';
 export { when } from './when.js';
 export type { ConditionalStep } from './when.js';
 export { parallel } from './parallel.js';
@@ -29,19 +29,22 @@ export type { PipelineBuilder } from './builder.js';
 export type {
   Step,
   TypedStep,
+  TypedPipeline,
   StepConfig,
   StepContext,
   StepOutput,
+  StepSchema,
   ExtractRequires,
   ExtractProvides,
   RetryPolicy,
+  StepResult,
+  StepSuccess,
+  StepFailure,
+  StepMeta,
   PipelineResult,
   PipelineSuccess,
   PipelineFailure,
-  PipelineExecutionMeta,
+  PipelineMeta,
   RollbackReport,
   RollbackFailure,
 } from './types.js';
-
-// Re-export Result types so consumers never need to import composable-functions
-export type { Result, Success, Failure } from 'composable-functions';

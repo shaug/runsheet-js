@@ -1,7 +1,29 @@
-import { composable } from 'composable-functions';
-import type { Result } from 'composable-functions';
-import type { RetryPolicy, StepConfig, StepContext, StepOutput, Step, TypedStep } from './types.js';
-import { RetryExhaustedError, TimeoutError } from './errors.js';
+import type {
+  RetryPolicy,
+  StepConfig,
+  StepContext,
+  StepOutput,
+  StepResult,
+  Step,
+  TypedStep,
+} from './types.js';
+import {
+  RequiresValidationError,
+  ProvidesValidationError,
+  TimeoutError,
+  RetryExhaustedError,
+} from './errors.js';
+import { toError, baseMeta, stepSuccess, stepFailure } from './internal.js';
+
+// ---------------------------------------------------------------------------
+// Validation helpers
+// ---------------------------------------------------------------------------
+
+function formatIssues(
+  issues: readonly { path: readonly (string | number)[]; message: string }[],
+): string {
+  return issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ');
+}
 
 // ---------------------------------------------------------------------------
 // Timeout and retry wrappers
@@ -10,23 +32,22 @@ import { RetryExhaustedError, TimeoutError } from './errors.js';
 // NOTE: Promise.race doesn't cancel the underlying run — if the timer wins,
 // the step's side effects continue in the background. True cancellation
 // would require AbortSignal propagation into step run functions.
-function withTimeout(
-  run: (ctx: Readonly<StepContext>) => Promise<Result<StepOutput>>,
-  stepName: string,
-  ms: number,
-): (ctx: Readonly<StepContext>) => Promise<Result<StepOutput>> {
-  return async (ctx) => {
-    let timer: ReturnType<typeof setTimeout>;
-    const timeout = new Promise<Result<StepOutput>>((resolve) => {
+// Timer functions — declared here to avoid depending on @types/node or DOM lib
+declare function setTimeout(callback: () => void, ms: number): unknown;
+declare function clearTimeout(handle: unknown): void;
+
+function withTimeout<T>(fn: () => T | Promise<T>, stepName: string, ms: number): () => Promise<T> {
+  return async () => {
+    let timer: unknown;
+    const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
-        const error = new TimeoutError(`${stepName} timed out after ${ms}ms`, ms);
-        resolve({ success: false, errors: [error] });
+        reject(new TimeoutError(`${stepName} timed out after ${ms}ms`, ms));
       }, ms);
     });
     try {
-      return await Promise.race([run(ctx), timeout]);
+      return await Promise.race([Promise.resolve(fn()), timeout]);
     } finally {
-      clearTimeout(timer!);
+      clearTimeout(timer);
     }
   };
 }
@@ -38,46 +59,63 @@ function computeDelay(policy: RetryPolicy, attempt: number): number {
   return strategy === 'exponential' ? base * 2 ** (attempt - 1) : base * attempt;
 }
 
-function withRetry(
-  run: (ctx: Readonly<StepContext>) => Promise<Result<StepOutput>>,
+function withRetry<T>(
+  fn: () => Promise<T>,
   stepName: string,
   policy: RetryPolicy,
-): (ctx: Readonly<StepContext>) => Promise<Result<StepOutput>> {
-  return async (ctx) => {
-    let lastResult = await run(ctx);
-    if (lastResult.success) return lastResult;
+): () => Promise<T> {
+  return async () => {
+    let lastError: Error;
+    const errors: Error[] = [];
 
-    for (let attempt = 1; attempt <= policy.count; attempt++) {
-      // Check if the failure is retryable
-      if (policy.retryIf && !policy.retryIf(lastResult.errors)) return lastResult;
-
-      const delay = computeDelay(policy, attempt);
-      if (delay > 0) await new Promise((r) => setTimeout(r, delay));
-      lastResult = await run(ctx);
-      if (lastResult.success) return lastResult;
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = toError(err);
+      errors.push(lastError);
     }
 
-    // Wrap the last failure with RETRY_EXHAUSTED
-    const error = new RetryExhaustedError(
+    for (let attempt = 1; attempt <= policy.count; attempt++) {
+      if (policy.retryIf && !policy.retryIf(errors)) throw lastError!;
+
+      const delay = computeDelay(policy, attempt);
+      if (delay > 0) await new Promise((r) => setTimeout(() => r(undefined), delay));
+
+      try {
+        return await fn();
+      } catch (err) {
+        lastError = toError(err);
+        errors.push(lastError);
+      }
+    }
+
+    throw new RetryExhaustedError(
       `${stepName} failed after ${policy.count} retries`,
       policy.count + 1,
     );
-    return { success: false, errors: [...lastResult.errors, error] };
   };
 }
 
-function wrapWithTimeoutAndRetry(
-  run: (ctx: Readonly<StepContext>) => Promise<Result<StepOutput>>,
-  stepName: string,
-  timeout: number | undefined,
-  retry: RetryPolicy | undefined,
-): (ctx: Readonly<StepContext>) => Promise<Result<StepOutput>> {
-  // Timeout wraps the individual run call, retry wraps the timeout+run combo
-  let wrapped = run;
-  if (timeout !== undefined) wrapped = withTimeout(wrapped, stepName, timeout);
-  if (retry !== undefined) wrapped = withRetry(wrapped, stepName, retry);
-  return wrapped;
+function buildExecutor<Requires extends StepContext, Provides extends StepContext>(
+  config: StepConfig<Requires, Provides>,
+): (ctx: Readonly<Requires>) => Promise<Provides> {
+  let fn = (ctx: Readonly<Requires>) => Promise.resolve(config.run(ctx));
+  if (config.timeout !== undefined) {
+    const baseFn = fn;
+    const ms = config.timeout;
+    fn = (ctx) => withTimeout(() => baseFn(ctx), config.name, ms)();
+  }
+  if (config.retry !== undefined) {
+    const baseFn = fn;
+    const policy = config.retry;
+    fn = (ctx) => withRetry(() => baseFn(ctx), config.name, policy)();
+  }
+  return fn;
 }
+
+// ---------------------------------------------------------------------------
+// defineStep
+// ---------------------------------------------------------------------------
 
 /**
  * Define a pipeline step.
@@ -106,9 +144,8 @@ function wrapWithTimeoutAndRetry(
  *
  * **Invariants:**
  * - The returned step object is always frozen (immutable).
- * - The `run` function is wrapped with `composable()` from
- *   composable-functions, which catches thrown errors and produces
- *   `Result` values. Step authors should throw to signal failure.
+ * - The `run` function catches thrown errors and produces
+ *   `StepResult` values. Step authors should throw to signal failure.
  * - This is the single type-erasure cast point in the library.
  *
  * @typeParam Requires - The context shape this step reads from.
@@ -119,24 +156,50 @@ function wrapWithTimeoutAndRetry(
 export function defineStep<Requires extends StepContext, Provides extends StepContext>(
   config: StepConfig<Requires, Provides>,
 ): TypedStep<Requires, Provides> {
-  const baseRun = composable(config.run) as unknown as (
-    ctx: Readonly<StepContext>,
-  ) => Promise<Result<StepOutput>>;
-  const wrappedRun = wrapWithTimeoutAndRetry(baseRun, config.name, config.timeout, config.retry);
+  const execute = buildExecutor(config);
 
-  // The cast below is the single point where typed step functions are erased
-  // to the runtime Step representation. This is safe because:
-  // 1. Schema validation at step boundaries (requires/provides) enforces
-  //    correct types at runtime before and after each step executes.
-  // 2. The pipeline accumulates context immutably, so the runtime object
-  //    structurally matches what the typed function expects.
-  // 3. The phantom brands on TypedStep preserve compile-time type tracking
-  //    through the builder API without affecting runtime behavior.
+  const run = async (ctx: Readonly<StepContext>): Promise<StepResult<StepOutput>> => {
+    const frozenCtx = Object.freeze({ ...ctx });
+    const meta = baseMeta(config.name, frozenCtx);
+
+    // Validate requires
+    if (config.requires) {
+      const parsed = config.requires.safeParse(frozenCtx);
+      if (!parsed.success) {
+        const error = new RequiresValidationError(
+          `${config.name} requires: ${formatIssues(parsed.error.issues)}`,
+        );
+        return stepFailure(error, meta, config.name);
+      }
+    }
+
+    // Execute (with retry + timeout)
+    let data: Provides;
+    try {
+      data = await execute(frozenCtx as Readonly<Requires>);
+    } catch (err) {
+      return stepFailure(toError(err), meta, config.name);
+    }
+
+    // Validate provides
+    if (config.provides) {
+      const parsed = config.provides.safeParse(data);
+      if (!parsed.success) {
+        const error = new ProvidesValidationError(
+          `${config.name} provides: ${formatIssues(parsed.error.issues)}`,
+        );
+        return stepFailure(error, meta, config.name);
+      }
+    }
+
+    return stepSuccess(data as unknown as StepOutput, meta);
+  };
+
   return Object.freeze({
     name: config.name,
     requires: config.requires ?? undefined,
     provides: config.provides ?? undefined,
-    run: wrappedRun as unknown as Step['run'],
+    run: run as unknown as Step['run'],
     rollback: config.rollback
       ? async (ctx: Readonly<StepContext>, output: Readonly<StepContext>) => {
           await config.rollback!(ctx as Readonly<Requires>, output as Readonly<Provides>);

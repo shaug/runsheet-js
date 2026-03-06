@@ -1,15 +1,12 @@
 /**
  * Error codes for errors produced by the runsheet library itself.
  *
- * Use these to distinguish library errors from application errors
- * in a pipeline's `errors` array:
+ * Use these to distinguish library errors from application errors:
  *
  * ```ts
  * if (!result.success) {
- *   for (const error of result.errors) {
- *     if (error instanceof RunsheetError) {
- *       console.log(error.code); // 'REQUIRES_VALIDATION', etc.
- *     }
+ *   if (result.error instanceof RunsheetError) {
+ *     console.log(result.error.code); // 'REQUIRES_VALIDATION', etc.
  *   }
  * }
  * ```
@@ -31,8 +28,8 @@ export type RunsheetErrorCode =
  *
  * Application errors (thrown by step `run` or `rollback` functions)
  * are never wrapped in `RunsheetError` — they pass through as-is.
- * If you see a `RunsheetError` in a result's `errors` array, the
- * library itself produced it.
+ * If you see a `RunsheetError` as `result.error`, the library itself
+ * produced it.
  *
  * Use `instanceof RunsheetError` to distinguish library errors from
  * application errors. Use `instanceof` on a subclass (e.g.,

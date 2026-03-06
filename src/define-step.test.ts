@@ -1,6 +1,6 @@
 import { describe, expect, it, assertType } from 'vitest';
 import { z } from 'zod';
-import type { Result } from './index.js';
+import type { StepResult } from './index.js';
 import { defineStep, buildPipeline, RunsheetError } from './index.js';
 
 describe('defineStep', () => {
@@ -37,7 +37,6 @@ describe('defineStep', () => {
         requires: z.object({ name: z.string(), age: z.number() }),
         provides: z.object({ greeting: z.string() }),
         run: async (ctx) => {
-          // ctx.name and ctx.age are inferred from the requires schema
           return { greeting: `Hello ${ctx.name}, age ${ctx.age}` };
         },
       });
@@ -73,7 +72,6 @@ describe('defineStep', () => {
       const step = defineStep<{ order: { id: string } }, { loggedAt: Date }>({
         name: 'log',
         run: async (ctx) => {
-          // ctx.order is typed via generics
           void ctx.order.id;
           return { loggedAt: new Date() };
         },
@@ -86,7 +84,7 @@ describe('defineStep', () => {
   });
 
   describe('run wrapping', () => {
-    it('returns a success Result on success', async () => {
+    it('returns a success StepResult on success', async () => {
       const step = defineStep({
         name: 'add',
         requires: z.object({ a: z.number() }),
@@ -95,14 +93,14 @@ describe('defineStep', () => {
       });
 
       const result = await step.run({ a: 5 });
-      expect(result).toEqual({
-        success: true,
-        data: { sum: 6 },
-        errors: [],
-      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toEqual({ sum: 6 });
+        expect(result.meta.name).toBe('add');
+      }
     });
 
-    it('returns a failure Result when run throws', async () => {
+    it('returns a failure StepResult when run throws', async () => {
       const step = defineStep({
         name: 'fail',
         requires: z.object({ a: z.number() }),
@@ -115,7 +113,7 @@ describe('defineStep', () => {
       const result = await step.run({ a: 1 });
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors[0].message).toBe('step failed');
+        expect(result.error.message).toBe('step failed');
       }
     });
 
@@ -128,16 +126,46 @@ describe('defineStep', () => {
       });
 
       const result = await step.run({ x: 3 });
-      expect(result).toEqual({
-        success: true,
-        data: { doubled: 6 },
-        errors: [],
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toEqual({ doubled: 6 });
+      }
+    });
+
+    it('validates requires and returns failure on mismatch', async () => {
+      const step = defineStep({
+        name: 'needsName',
+        requires: z.object({ name: z.string() }),
+        run: async (ctx) => ({ greeting: `Hi ${ctx.name}` }),
       });
+
+      const result = await step.run({});
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBeInstanceOf(RunsheetError);
+        expect((result.error as RunsheetError).code).toBe('REQUIRES_VALIDATION');
+      }
+    });
+
+    it('validates provides and returns failure on mismatch', async () => {
+      const step = defineStep({
+        name: 'badProvides',
+        provides: z.object({ count: z.number() }),
+        // @ts-expect-error — intentionally returning wrong type for test
+        run: async () => ({ count: 'not a number' }),
+      });
+
+      const result = await step.run({});
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBeInstanceOf(RunsheetError);
+        expect((result.error as RunsheetError).code).toBe('PROVIDES_VALIDATION');
+      }
     });
   });
 
   describe('type safety', () => {
-    it('run returns a typed Result, not erased StepOutput', async () => {
+    it('run returns a typed StepResult', async () => {
       const step = defineStep({
         name: 'typed',
         requires: z.object({ a: z.number() }),
@@ -146,7 +174,7 @@ describe('defineStep', () => {
       });
 
       const result = await step.run({ a: 5 });
-      assertType<Result<{ sum: number }>>(result);
+      assertType<StepResult<{ sum: number }>>(result);
       if (result.success) {
         assertType<{ sum: number }>(result.data);
       }
@@ -162,8 +190,7 @@ describe('defineStep', () => {
 
       expect(step.name).toBe('test');
 
-      // Run parameter type is the concrete Requires type
-      assertType<(ctx: Readonly<{ name: string }>) => Promise<Result<{ greeting: string }>>>(
+      assertType<(ctx: Readonly<{ name: string }>) => Promise<StepResult<{ greeting: string }>>>(
         step.run,
       );
     });
@@ -202,11 +229,9 @@ describe('defineStep', () => {
       const result = await pipeline.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
-        const retryError = result.errors.find(
-          (e) => e instanceof RunsheetError && e.code === 'RETRY_EXHAUSTED',
-        );
-        expect(retryError).toBeDefined();
-        expect(retryError!.message).toContain('2 retries');
+        expect(result.error).toBeInstanceOf(RunsheetError);
+        expect((result.error as RunsheetError).code).toBe('RETRY_EXHAUSTED');
+        expect(result.error.message).toContain('2 retries');
       }
     });
 
@@ -221,7 +246,7 @@ describe('defineStep', () => {
         name: 'selective',
         retry: {
           count: 3,
-          retryIf: (errors) => errors.some((e) => e instanceof RetryableError),
+          retryIf: (errors) => errors[errors.length - 1] instanceof RetryableError,
         },
         run: async () => {
           attempts++;
@@ -236,10 +261,7 @@ describe('defineStep', () => {
       expect(attempts).toBe(2); // initial + 1 retry, then retryIf returned false
       if (!result.success) {
         // Should NOT have RETRY_EXHAUSTED since retryIf stopped it early
-        const retryError = result.errors.find(
-          (e) => e instanceof RunsheetError && e.code === 'RETRY_EXHAUSTED',
-        );
-        expect(retryError).toBeUndefined();
+        expect(result.error).not.toBeInstanceOf(RunsheetError);
       }
     });
 
@@ -261,7 +283,6 @@ describe('defineStep', () => {
       const pipeline = buildPipeline({ name: 'test', steps: [step] });
       await pipeline.run({});
 
-      // 1st retry: ~50ms, 2nd retry: ~100ms
       const gap1 = timestamps[1] - timestamps[0];
       const gap2 = timestamps[2] - timestamps[1];
       expect(gap1).toBeGreaterThanOrEqual(40); // ~50ms with tolerance
@@ -286,7 +307,6 @@ describe('defineStep', () => {
       const pipeline = buildPipeline({ name: 'test', steps: [step] });
       await pipeline.run({});
 
-      // 1st retry: 50 * 2^0 = 50ms, 2nd retry: 50 * 2^1 = 100ms
       const gap1 = timestamps[1] - timestamps[0];
       const gap2 = timestamps[2] - timestamps[1];
       expect(gap1).toBeGreaterThanOrEqual(40);
@@ -319,9 +339,9 @@ describe('defineStep', () => {
       const result = await pipeline.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.errors[0]).toBeInstanceOf(RunsheetError);
-        expect((result.errors[0] as RunsheetError).code).toBe('TIMEOUT');
-        expect(result.errors[0].message).toContain('50ms');
+        expect(result.error).toBeInstanceOf(RunsheetError);
+        expect((result.error as RunsheetError).code).toBe('TIMEOUT');
+        expect(result.error.message).toContain('50ms');
       }
     });
 
@@ -366,7 +386,6 @@ describe('defineStep', () => {
 
       const pipeline = buildPipeline({ name: 'test', steps: [step] });
       const result = await pipeline.run({});
-      // First two attempts timeout, third succeeds
       expect(result.success).toBe(true);
       expect(attempts).toBe(3);
     });

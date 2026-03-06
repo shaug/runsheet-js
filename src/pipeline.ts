@@ -1,28 +1,21 @@
-import type { ParserSchema, Result } from 'composable-functions';
 import type {
-  ExtractProvides,
-  PipelineFailure,
   PipelineResult,
-  PipelineSuccess,
   RollbackFailure,
   RollbackReport,
   Step,
   StepContext,
   StepOutput,
+  StepResult,
+  StepSchema,
+  TypedPipeline,
+  ExtractProvides,
   UnionToIntersection,
 } from './types.js';
 import type { StepMiddleware } from './middleware.js';
-import {
-  type RunsheetError,
-  ArgsValidationError,
-  PredicateError,
-  RequiresValidationError,
-  ProvidesValidationError,
-  StrictOverlapError,
-} from './errors.js';
 import { applyMiddleware } from './middleware.js';
+import { ArgsValidationError, PredicateError, StrictOverlapError } from './errors.js';
+import { toError, pipelineMeta, pipelineSuccess, pipelineFailure } from './internal.js';
 import { isConditionalStep } from './when.js';
-import { toError } from './internal.js';
 
 // ---------------------------------------------------------------------------
 // Pipeline configuration
@@ -42,7 +35,7 @@ export type PipelineConfig = {
   /** Optional middleware applied to every step. First in array = outermost. */
   readonly middleware?: readonly StepMiddleware[];
   /** Optional schema that validates the pipeline's input arguments. */
-  readonly argsSchema?: ParserSchema<StepContext>;
+  readonly argsSchema?: StepSchema<StepContext>;
   /**
    * When `true`, throws at build time if two or more steps provide the
    * same key. Only checks steps that have a `provides` schema with an
@@ -81,100 +74,20 @@ function checkStrictOverlap(steps: readonly Step[]): void {
 }
 
 // ---------------------------------------------------------------------------
-// Pipeline
-// ---------------------------------------------------------------------------
-
-/**
- * A built pipeline, ready to execute.
- *
- * Call `run(args)` to execute the pipeline. The result is a
- * {@link PipelineResult} — either a success with the fully accumulated
- * context, or a failure with error details and a rollback report.
- *
- * Pipeline objects are frozen (immutable) and can be called repeatedly.
- *
- * @typeParam Args - The input type accepted by `run()`.
- * @typeParam Ctx - The accumulated output type on success.
- */
-export type Pipeline<Args extends StepContext, Ctx> = {
-  /** The pipeline's name, as provided at build time. */
-  readonly name: string;
-  /**
-   * Execute the pipeline.
-   *
-   * @param args - The initial arguments. Merged into the context before
-   *   the first step runs. Validated against `argsSchema` if one was
-   *   provided.
-   * @returns A {@link PipelineResult} — discriminate on `success` to
-   *   access `data` (on success) or `errors`/`rollback` (on failure).
-   */
-  readonly run: (args: Args) => Promise<PipelineResult<Ctx>>;
-};
-
-// ---------------------------------------------------------------------------
-// Schema validation
-// ---------------------------------------------------------------------------
-// Pipeline-level validation returns parsed data for passthrough.
-// See internal.ts for the combinator variant (validateInnerSchema).
-
-type ValidationErrorClass = new (message: string) => RunsheetError;
-
-function validateSchema<T>(
-  schema: ParserSchema<T> | undefined,
-  data: unknown,
-  label: string,
-  ErrorClass: ValidationErrorClass,
-): { success: true; data: T } | { success: false; errors: RunsheetError[] } {
-  if (!schema) return { success: true, data: data as T };
-
-  const parsed = schema.safeParse(data);
-  if (parsed.success) return { success: true, data: parsed.data };
-
-  const errors = parsed.error.issues.map(
-    (issue) => new ErrorClass(`${label}: ${issue.path.join('.')}: ${issue.message}`),
-  );
-  return { success: false, errors };
-}
-
-// ---------------------------------------------------------------------------
-// Rollback
-// ---------------------------------------------------------------------------
-
-async function executeRollback(
-  executedSteps: readonly Step[],
-  snapshots: readonly StepContext[],
-  outputs: readonly StepOutput[],
-): Promise<RollbackReport> {
-  const completed: string[] = [];
-  const failed: RollbackFailure[] = [];
-
-  for (let i = executedSteps.length - 1; i >= 0; i--) {
-    const step = executedSteps[i];
-    if (!step.rollback) continue;
-
-    try {
-      await step.rollback(snapshots[i], outputs[i]);
-      completed.push(step.name);
-    } catch (err) {
-      failed.push({
-        step: step.name,
-        error: toError(err),
-      });
-    }
-  }
-
-  return Object.freeze({ completed, failed });
-}
-
-// ---------------------------------------------------------------------------
 // Execution state — accumulated during pipeline run
 // ---------------------------------------------------------------------------
 
+/** Record of a step that executed successfully during a pipeline run. */
+type ExecutedStepEntry = {
+  step: Step;
+  snapshot: StepContext;
+  output: StepOutput;
+};
+
+/** Mutable state accumulated during pipeline execution. */
 type ExecutionState = {
   context: StepContext;
-  readonly snapshots: StepContext[];
-  readonly outputs: StepOutput[];
-  readonly executedSteps: Step[];
+  readonly executed: ExecutedStepEntry[];
   readonly stepsExecuted: string[];
   readonly stepsSkipped: string[];
 };
@@ -182,130 +95,80 @@ type ExecutionState = {
 function createExecutionState(args: StepContext): ExecutionState {
   return {
     context: Object.freeze({ ...args }),
-    snapshots: [],
-    outputs: [],
-    executedSteps: [],
+    executed: [],
     stepsExecuted: [],
     stepsSkipped: [],
   };
 }
 
 // ---------------------------------------------------------------------------
-// Result constructors
+// Rollback
 // ---------------------------------------------------------------------------
 
-function pipelineFailure(
-  pipelineName: string,
-  args: StepContext,
-  state: ExecutionState,
-  failedStep: string,
-  errors: Error[],
-  rollback: RollbackReport,
-): PipelineFailure {
-  return Object.freeze({
-    success: false,
-    errors,
-    meta: Object.freeze({
-      pipeline: pipelineName,
-      args,
-      stepsExecuted: state.stepsExecuted,
-      stepsSkipped: state.stepsSkipped,
-    }),
-    failedStep,
-    rollback,
-  });
-}
+/**
+ * Execute rollback handlers for previously completed steps in reverse
+ * order. Best-effort: if a handler throws, remaining rollbacks still
+ * execute. Returns a report of what succeeded and what failed.
+ */
+async function executeRollback(executed: readonly ExecutedStepEntry[]): Promise<RollbackReport> {
+  const completed: string[] = [];
+  const failed: RollbackFailure[] = [];
 
-function pipelineSuccess(
-  pipelineName: string,
-  args: StepContext,
-  state: ExecutionState,
-): PipelineSuccess<StepContext> {
-  return Object.freeze({
-    success: true,
-    data: state.context,
-    errors: [] as [],
-    meta: Object.freeze({
-      pipeline: pipelineName,
-      args,
-      stepsExecuted: state.stepsExecuted,
-      stepsSkipped: state.stepsSkipped,
-    }),
-  });
-}
+  for (let i = executed.length - 1; i >= 0; i--) {
+    const entry = executed[i];
+    if (!entry.step.rollback) continue;
 
-// ---------------------------------------------------------------------------
-// Step executor — the full lifecycle (validate requires → run → validate provides)
-// ---------------------------------------------------------------------------
-
-function createStepExecutor(
-  step: Step,
-): (ctx: Readonly<StepContext>) => Promise<Result<StepOutput>> {
-  return async (ctx) => {
-    // Validate requires
-    const requiresCheck = validateSchema(
-      step.requires,
-      ctx,
-      `${step.name} requires`,
-      RequiresValidationError,
-    );
-    if (!requiresCheck.success) {
-      return { success: false, errors: requiresCheck.errors };
+    try {
+      await entry.step.rollback(entry.snapshot, entry.output);
+      completed.push(entry.step.name);
+    } catch (err) {
+      failed.push({ step: entry.step.name, error: toError(err) });
     }
+  }
 
-    // Execute step run
-    const result = await step.run(ctx);
-    if (!result.success) return result;
-
-    // Validate provides
-    const providesCheck = validateSchema(
-      step.provides,
-      result.data,
-      `${step.name} provides`,
-      ProvidesValidationError,
-    );
-    if (!providesCheck.success) {
-      return { success: false, errors: providesCheck.errors };
-    }
-
-    return {
-      success: true,
-      data: providesCheck.data,
-      errors: [],
-    };
-  };
+  return Object.freeze({ completed, failed });
 }
 
 // ---------------------------------------------------------------------------
 // Pipeline execution
 // ---------------------------------------------------------------------------
 
+/**
+ * Internal result of pipeline execution, pairing the user-facing
+ * {@link StepResult} with the execution state needed for rollback
+ * when this pipeline is used as a step in an outer pipeline.
+ */
+type ExecutionOutcome = {
+  result: PipelineResult<StepContext>;
+  state: ExecutionState;
+};
+
+/**
+ * Core pipeline execution loop.
+ *
+ * Runs steps sequentially, accumulating context. On failure,
+ * executes rollback for previously completed steps. Returns both
+ * the result and the execution state (for nested pipeline rollback).
+ */
 async function executePipeline(
   config: PipelineConfig,
   args: StepContext,
-): Promise<PipelineResult<StepContext>> {
+): Promise<ExecutionOutcome> {
+  const frozenArgs = Object.freeze({ ...args });
+
   // Validate pipeline args if schema provided
   if (config.argsSchema) {
-    const argsCheck = validateSchema(
-      config.argsSchema,
-      args,
-      `${config.name} args`,
-      ArgsValidationError,
-    );
-    if (!argsCheck.success) {
-      const state = createExecutionState(args);
-      return pipelineFailure(
-        config.name,
-        args,
-        state,
-        config.name,
-        argsCheck.errors,
-        Object.freeze({ completed: [], failed: [] }),
-      );
+    const parsed = config.argsSchema.safeParse(frozenArgs);
+    if (!parsed.success) {
+      const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ');
+      const error = new ArgsValidationError(`${config.name} args: ${issues}`);
+      const meta = pipelineMeta(config.name, frozenArgs, [], []);
+      const state = createExecutionState(frozenArgs);
+      return { result: pipelineFailure(error, meta, config.name), state };
     }
   }
 
-  const state = createExecutionState(args);
+  const state = createExecutionState(frozenArgs);
   const middlewares = config.middleware ?? [];
 
   for (const step of config.steps) {
@@ -319,51 +182,70 @@ async function executePipeline(
       const cause = toError(err);
       const error = new PredicateError(`${step.name} predicate: ${cause.message}`);
       error.cause = cause;
-      const rollback = await executeRollback(state.executedSteps, state.snapshots, state.outputs);
-      return pipelineFailure(config.name, args, state, step.name, [error], rollback);
+      const rollback = await executeRollback(state.executed);
+      const meta = pipelineMeta(
+        config.name,
+        frozenArgs,
+        [...state.stepsExecuted],
+        [...state.stepsSkipped],
+      );
+      return { result: pipelineFailure(error, meta, step.name, rollback), state };
     }
 
     // Snapshot pre-step context
-    state.snapshots.push(state.context);
+    const snapshot = state.context;
 
-    // Build executor with middleware wrapping the full lifecycle
-    const baseExecutor = createStepExecutor(step);
-    const executor = applyMiddleware(
-      middlewares,
-      { name: step.name, requires: step.requires, provides: step.provides },
-      baseExecutor,
-    );
+    // Wrap step.run with middleware
+    const executor =
+      middlewares.length > 0
+        ? applyMiddleware(
+            middlewares,
+            { name: step.name, requires: step.requires, provides: step.provides },
+            (ctx) => step.run(ctx),
+          )
+        : (ctx: Readonly<StepContext>) => step.run(ctx);
 
-    // Execute (try/catch handles middleware throws outside the Result boundary)
-    let result: Result<StepOutput>;
+    // Execute
+    let result: StepResult<StepOutput>;
     try {
       result = await executor(state.context);
     } catch (err) {
       const error = toError(err);
-      state.snapshots.pop();
-      const rollback = await executeRollback(state.executedSteps, state.snapshots, state.outputs);
-      return pipelineFailure(config.name, args, state, step.name, [error], rollback);
+      const rollback = await executeRollback(state.executed);
+      const meta = pipelineMeta(
+        config.name,
+        frozenArgs,
+        [...state.stepsExecuted],
+        [...state.stepsSkipped],
+      );
+      return { result: pipelineFailure(error, meta, step.name, rollback), state };
     }
 
     if (!result.success) {
-      // Remove the snapshot we just pushed — the step didn't complete
-      state.snapshots.pop();
-      const rollback = await executeRollback(state.executedSteps, state.snapshots, state.outputs);
-      return pipelineFailure(config.name, args, state, step.name, result.errors, rollback);
+      const rollback = await executeRollback(state.executed);
+      const meta = pipelineMeta(
+        config.name,
+        frozenArgs,
+        [...state.stepsExecuted],
+        [...state.stepsSkipped],
+      );
+      return { result: pipelineFailure(result.error, meta, step.name, rollback), state };
     }
 
-    // Track step output and accumulate context.
-    // IMPORTANT: result.data is stored by reference. The choice() and map()
-    // combinators rely on this exact reference for WeakMap-based rollback
-    // tracking. Do not clone or spread result.data before storing it here.
+    // Track and accumulate
     const output = result.data;
-    state.outputs.push(output);
-    state.executedSteps.push(step);
+    state.executed.push({ step, snapshot, output });
     state.stepsExecuted.push(step.name);
     state.context = Object.freeze({ ...state.context, ...output });
   }
 
-  return pipelineSuccess(config.name, args, state);
+  const meta = pipelineMeta(
+    config.name,
+    frozenArgs,
+    [...state.stepsExecuted],
+    [...state.stepsSkipped],
+  );
+  return { result: pipelineSuccess(state.context, meta), state };
 }
 
 // ---------------------------------------------------------------------------
@@ -373,53 +255,40 @@ async function executePipeline(
 /**
  * Build a pipeline from an array of steps.
  *
- * The result type is inferred from the steps — `pipeline.run()` returns
- * a {@link PipelineResult} whose `data` is the intersection of the
- * initial `Args` and all step output types.
+ * Returns a {@link TypedPipeline} — pipelines ARE steps. A pipeline can
+ * be used directly in another pipeline's steps array for composition.
+ *
+ * The `run()` method returns a {@link PipelineResult} which extends
+ * {@link StepResult} with orchestration metadata (`stepsExecuted`,
+ * `stepsSkipped`).
  *
  * @example
  * ```ts
- * const pipeline = buildPipeline({
- *   name: 'placeOrder',
+ * const checkout = buildPipeline({
+ *   name: 'checkout',
  *   steps: [validateOrder, chargePayment, sendConfirmation],
  *   middleware: [logging, timing],
  *   argsSchema: z.object({ orderId: z.string() }),
  * });
  *
- * const result = await pipeline.run({ orderId: '123' });
+ * const result = await checkout.run({ orderId: '123' });
  * if (result.success) {
- *   result.data.chargeId; // string — fully typed
+ *   result.data.chargeId;          // string — fully typed
+ *   result.meta.stepsExecuted;     // string[] — orchestration detail
  * }
+ *
+ * // Compose: use checkout as a step in another pipeline
+ * const mega = buildPipeline({
+ *   name: 'mega',
+ *   steps: [checkout, shipOrder, notify],
+ * });
  * ```
  *
- * **Execution semantics:**
- * - Steps execute sequentially in array order.
- * - Context is frozen (`Object.freeze`) at every step boundary.
- * - Conditional steps (wrapped with `when()`) are skipped when their
- *   predicate returns false — no snapshot, no rollback entry.
- * - On step failure, rollback handlers for all previously completed
- *   steps execute in reverse order (best-effort).
- * - Middleware wraps the full step lifecycle including schema validation.
- *
- * **Invariants:**
- * - The returned pipeline object is frozen (immutable).
- * - Errors thrown by steps, predicates, or middleware are caught and
- *   returned as `PipelineFailure` — `run()` never throws.
- *
- * @typeParam Args - The pipeline's input type. Inferred from `argsSchema`
- *   if provided, otherwise defaults to `StepContext`.
- * @typeParam S - The step types in the array. Inferred automatically —
- *   do not specify manually.
+ * @typeParam Args - The pipeline's input type.
+ * @typeParam S - The step types in the array.
  * @param config - Pipeline configuration.
- * @param config.name - Pipeline name, used in metadata and error messages.
- * @param config.steps - Steps to execute in order.
- * @param config.middleware - Optional middleware applied to every step.
- *   First in array = outermost wrapper.
- * @param config.argsSchema - Optional schema that validates `args` before
- *   any steps run. Validation failure produces a `PipelineFailure` with
- *   `failedStep` set to the pipeline name.
- * @returns A frozen {@link Pipeline} whose `run()` method executes the
- *   steps and returns a {@link PipelineResult}.
+ * @returns A frozen {@link TypedPipeline} whose `run()` returns a
+ *   {@link PipelineResult}.
  */
 export function buildPipeline<
   Args extends StepContext = StepContext,
@@ -428,13 +297,43 @@ export function buildPipeline<
   readonly name: string;
   readonly steps: readonly S[];
   readonly middleware?: readonly StepMiddleware[];
-  readonly argsSchema?: ParserSchema<Args>;
+  readonly argsSchema?: StepSchema<Args>;
   readonly strict?: boolean;
-}): Pipeline<Args, Args & UnionToIntersection<ExtractProvides<S>>> {
+}): TypedPipeline<Args, Args & UnionToIntersection<ExtractProvides<S>>> {
   if (config.strict) checkStrictOverlap(config.steps);
+
+  const pipelineConfig: PipelineConfig = config as PipelineConfig;
+
+  // Captured execution state for rollback when used as a nested step.
+  // When this pipeline succeeds as part of an outer pipeline, a later
+  // outer step failure can trigger rollback of this pipeline's inner
+  // steps via the rollback handler below.
+  let capturedState: ExecutionState | null = null;
+
+  const run = async (ctx: Readonly<StepContext>): Promise<PipelineResult<StepOutput>> => {
+    capturedState = null;
+    const outcome = await executePipeline(pipelineConfig, ctx as StepContext);
+    if (outcome.result.success) {
+      capturedState = outcome.state;
+    }
+    return outcome.result;
+  };
+
+  const rollback = async (): Promise<void> => {
+    if (capturedState) {
+      const state = capturedState;
+      capturedState = null;
+      await executeRollback(state.executed);
+    }
+  };
 
   return Object.freeze({
     name: config.name,
-    run: (args: Args) => executePipeline(config as PipelineConfig, args),
-  }) as Pipeline<Args, Args & UnionToIntersection<ExtractProvides<S>>>;
+    requires: config.argsSchema ?? undefined,
+    provides: undefined,
+    run,
+    rollback,
+    retry: undefined,
+    timeout: undefined,
+  }) as unknown as TypedPipeline<Args, Args & UnionToIntersection<ExtractProvides<S>>>;
 }

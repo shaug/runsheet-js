@@ -81,9 +81,6 @@
   "engines": {
     "node": ">=20"
   },
-  "dependencies": {
-    "composable-functions": "^4.0.0"
-  },
   "peerDependencies": {
     "zod": "^3.22.0"
   },

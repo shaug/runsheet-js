@@ -1,7 +1,7 @@
 import { describe, expect, it, assertType } from 'vitest';
 import { z } from 'zod';
 import { defineStep, buildPipeline, RunsheetError } from './index.js';
-import type { PipelineResult } from './index.js';
+import type { StepResult } from './index.js';
 
 describe('buildPipeline', () => {
   const stepA = defineStep({
@@ -102,9 +102,9 @@ describe('buildPipeline', () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.failedStep).toBe('needsName');
-        expect(result.errors[0]).toBeInstanceOf(RunsheetError);
-        expect((result.errors[0] as RunsheetError).code).toBe('REQUIRES_VALIDATION');
-        expect(result.errors[0].message).toContain('requires');
+        expect(result.error).toBeInstanceOf(RunsheetError);
+        expect((result.error as RunsheetError).code).toBe('REQUIRES_VALIDATION');
+        expect(result.error.message).toContain('requires');
       }
     });
 
@@ -125,9 +125,9 @@ describe('buildPipeline', () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.failedStep).toBe('badProvides');
-        expect(result.errors[0]).toBeInstanceOf(RunsheetError);
-        expect((result.errors[0] as RunsheetError).code).toBe('PROVIDES_VALIDATION');
-        expect(result.errors[0].message).toContain('provides');
+        expect(result.error).toBeInstanceOf(RunsheetError);
+        expect((result.error as RunsheetError).code).toBe('PROVIDES_VALIDATION');
+        expect(result.error.message).toContain('provides');
       }
     });
   });
@@ -163,7 +163,7 @@ describe('buildPipeline', () => {
       const result = await pipeline.run({});
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.meta.pipeline).toBe('myPipeline');
+        expect(result.meta.name).toBe('myPipeline');
         expect(result.meta.stepsExecuted).toEqual(['stepA', 'stepB']);
         expect(result.meta.stepsSkipped).toEqual([]);
       }
@@ -262,9 +262,9 @@ describe('buildPipeline', () => {
       const bad = await pipeline.run({} as any);
       expect(bad.success).toBe(false);
       if (!bad.success) {
-        expect(bad.errors[0]).toBeInstanceOf(RunsheetError);
-        expect((bad.errors[0] as RunsheetError).code).toBe('ARGS_VALIDATION');
-        expect(bad.errors[0].message).toContain('args');
+        expect(bad.error).toBeInstanceOf(RunsheetError);
+        expect((bad.error as RunsheetError).code).toBe('ARGS_VALIDATION');
+        expect(bad.error.message).toContain('args');
         expect(bad.failedStep).toBe('test');
       }
     });
@@ -341,7 +341,7 @@ describe('buildPipeline', () => {
       });
 
       const result = await pipeline.run({});
-      assertType<PipelineResult<{ a: string } & { b: number } & { c: boolean }>>(result);
+      assertType<StepResult<{ a: string } & { b: number } & { c: boolean }>>(result);
       if (result.success) {
         assertType<string>(result.data.a);
         assertType<number>(result.data.b);
@@ -421,6 +421,81 @@ describe('buildPipeline', () => {
       });
 
       expect(Object.isFrozen(pipeline)).toBe(true);
+    });
+  });
+
+  describe('pipeline as step', () => {
+    it('can be used as a step in another pipeline', async () => {
+      const inner = buildPipeline({
+        name: 'inner',
+        steps: [stepA, stepB],
+      });
+
+      const stepD = defineStep({
+        name: 'stepD',
+        requires: z.object({ b: z.number() }),
+        provides: z.object({ d: z.string() }),
+        run: async (ctx) => ({ d: `d_${ctx.b}` }),
+      });
+
+      const outer = buildPipeline({
+        name: 'outer',
+        steps: [inner, stepD],
+      });
+
+      const result = await outer.run({});
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.a).toBe('hello');
+        expect(result.data.b).toBe(5);
+        expect(result.data.d).toBe('d_5');
+        expect(result.meta.name).toBe('outer');
+        expect(result.meta.stepsExecuted).toEqual(['inner', 'stepD']);
+      }
+    });
+
+    it('rolls back inner pipeline steps when a later outer step fails', async () => {
+      const rolledBack: string[] = [];
+
+      const a = defineStep({
+        name: 'a',
+        provides: z.object({ a: z.number() }),
+        run: async () => ({ a: 1 }),
+        rollback: async () => {
+          rolledBack.push('a');
+        },
+      });
+
+      const b = defineStep({
+        name: 'b',
+        provides: z.object({ b: z.number() }),
+        run: async () => ({ b: 2 }),
+        rollback: async () => {
+          rolledBack.push('b');
+        },
+      });
+
+      const inner = buildPipeline({
+        name: 'inner',
+        steps: [a, b],
+      });
+
+      const fails = defineStep({
+        name: 'fails',
+        run: async () => {
+          throw new Error('outer fail');
+        },
+      });
+
+      const outer = buildPipeline({
+        name: 'outer',
+        steps: [inner, fails],
+      });
+
+      const result = await outer.run({});
+      expect(result.success).toBe(false);
+      // Inner pipeline's steps should be rolled back
+      expect(rolledBack).toEqual(['b', 'a']);
     });
   });
 });

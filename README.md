@@ -5,7 +5,7 @@
 
 Type-safe, composable business logic pipelines for TypeScript.
 
-Built on [composable-functions] for `Result` semantics and error handling.
+Pipelines are steps — compose them freely, nest them arbitrarily.
 
 ## Why runsheet
 
@@ -140,13 +140,29 @@ if (result.success) {
   console.log(result.data.chargeId); // string — fully typed
   console.log(result.data.sentAt); // Date
 } else {
-  console.error(result.errors); // what went wrong
+  console.error(result.error); // what went wrong
   console.log(result.rollback); // { completed: [...], failed: [...] }
 }
 ```
 
 The pipeline's result type is inferred from the steps — `result.data` carries
 the intersection of all step outputs, not an erased `Record<string, unknown>`.
+
+### Pipeline composition
+
+Pipelines are steps — use one pipeline as a step in another:
+
+```typescript
+const checkout = buildPipeline({
+  name: 'checkout',
+  steps: [validateOrder, chargePayment, sendConfirmation],
+});
+
+const fullFlow = buildPipeline({
+  name: 'fullFlow',
+  steps: [checkout, shipOrder, notifyWarehouse],
+});
+```
 
 ### Builder API
 
@@ -501,18 +517,17 @@ if (!result.success) {
 }
 ```
 
-## Pipeline result
+## Step result
 
-Every pipeline returns a `PipelineResult` with execution metadata:
+Every `run()` returns a `StepResult` with execution metadata:
 
 ```typescript
 // Success
 {
   success: true,
   data: { /* accumulated context — fully typed */ },
-  errors: [],
   meta: {
-    pipeline: 'placeOrder',
+    name: 'placeOrder',
     args: { orderId: '123' },
     stepsExecuted: ['validateOrder', 'chargePayment', 'sendConfirmation'],
     stepsSkipped: [],
@@ -522,8 +537,8 @@ Every pipeline returns a `PipelineResult` with execution metadata:
 // Failure
 {
   success: false,
-  errors: [Error],
-  meta: { pipeline, args, stepsExecuted, stepsSkipped },
+  error: Error,
+  meta: { name, args, stepsExecuted, stepsSkipped },
   failedStep: 'chargePayment',
   rollback: { completed: [...], failed: [...] },
 }
@@ -549,9 +564,8 @@ schemas or generics you provide.
 
 ### `buildPipeline(config)`
 
-Build a pipeline from an array of steps. The result type is inferred from the
-steps — `pipeline.run()` returns a `PipelineResult` whose `data` is the
-intersection of all step output types.
+Build a pipeline from an array of steps. Returns a `TypedStep` whose `run()`
+returns a `StepResult` — `data` is the intersection of all step output types.
 
 | Option       | Type               | Description                                                       |
 | ------------ | ------------------ | ----------------------------------------------------------------- |
@@ -582,7 +596,7 @@ createPipeline('order', z.object({ id: z.string() }), { strict: true });
 
 Run steps concurrently and merge their outputs. Returns a single step usable
 anywhere a regular step is accepted. On partial failure, succeeded inner steps
-are rolled back before the error propagates. p
+are rolled back before the error propagates.
 
 ### `choice(...branches)`
 
@@ -629,7 +643,6 @@ MIT
 [ci-badge]:
   https://github.com/shaug/runsheet-js/actions/workflows/ci.yml/badge.svg
 [ci-url]: https://github.com/shaug/runsheet-js/actions/workflows/ci.yml
-[composable-functions]: https://github.com/seasonedcc/composable-functions
 [license-badge]: https://img.shields.io/npm/l/runsheet
 [license-url]: https://github.com/shaug/runsheet-js/blob/main/LICENSE
 [npm-badge]: https://img.shields.io/npm/v/runsheet
