@@ -134,6 +134,10 @@ export type UnionToIntersection<U> = [U] extends [never]
     ? I
     : never;
 
+/** Extract the Requires type from a step. Returns `StepContext` for untyped (erased) steps. */
+export type ExtractRequires<T extends Step> =
+  T extends TypedStep<infer R, StepContext> ? R : StepContext;
+
 /** Extract the Provides type from a step. Returns `object` for untyped (erased) steps. */
 export type ExtractProvides<T extends Step> =
   T extends TypedStep<StepContext, infer P> ? P : object;

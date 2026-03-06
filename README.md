@@ -278,6 +278,28 @@ retry: {
 with a `RunsheetError` code `'TIMEOUT'`. When both are set, each retry attempt
 gets its own timeout.
 
+## Parallel steps
+
+Run steps concurrently with `parallel()`. Outputs merge in array order:
+
+```typescript
+import { parallel } from 'runsheet';
+
+const placeOrder = buildPipeline({
+  name: 'placeOrder',
+  steps: [
+    validateOrder,
+    parallel(reserveInventory, chargePayment),
+    sendConfirmation,
+  ],
+});
+```
+
+On partial failure, succeeded inner steps are rolled back before the error
+propagates. Inner steps retain their own `requires`/`provides` validation,
+`retry`, and `timeout` behavior. Conditional steps (via `when()`) work inside
+`parallel()`.
+
 ## Rollback
 
 When a step fails, rollback handlers for all previously completed steps execute
@@ -385,6 +407,12 @@ createPipeline('order', z.object({ id: z.string() }));
 createPipeline('order', { strict: true });
 createPipeline('order', z.object({ id: z.string() }), { strict: true });
 ```
+
+### `parallel(...steps)`
+
+Run steps concurrently and merge their outputs. Returns a single step usable
+anywhere a regular step is accepted. On partial failure, succeeded inner steps
+are rolled back before the error propagates. p
 
 ### `when(predicate, step)`
 

@@ -195,6 +195,27 @@ createPipeline('checkout', z.object({ userId: z.string() }), { strict: true })
   .build();
 ```
 
+### parallel (concurrent steps)
+
+```typescript
+import { parallel } from 'runsheet';
+
+const pipeline = buildPipeline({
+  name: 'checkout',
+  steps: [
+    validateOrder,
+    parallel(reserveInventory, chargePayment),
+    sendConfirmation,
+  ],
+});
+```
+
+All inner steps receive the same pre-parallel context and run via
+Promise.allSettled. Outputs merge in array order. On partial failure, succeeded
+inner steps are rolled back before the error propagates. Inner steps retain
+their own requires/provides validation, retry, and timeout. Conditional steps
+(when()) work inside parallel().
+
 ### when (conditional steps)
 
 ```typescript
@@ -286,7 +307,7 @@ Application errors (thrown from step run functions) pass through as-is.
 
 ## Key exports
 
-Functions: defineStep, buildPipeline, createPipeline, when Classes:
+Functions: defineStep, buildPipeline, createPipeline, when, parallel Classes:
 RunsheetError Types: Step, TypedStep, StepConfig, RetryPolicy, Pipeline,
 PipelineBuilder, PipelineResult, PipelineSuccess, PipelineFailure,
 PipelineExecutionMeta, RollbackReport, RollbackFailure, StepMiddleware,
