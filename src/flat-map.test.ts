@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, buildPipeline, createPipeline, flatMap, filter } from './index.js';
+import { defineStep, pipeline, createPipeline, flatMap, filter } from './index.js';
 
 describe('flatMap', () => {
   describe('sync callback', () => {
     it('maps and flattens results', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           flatMap(
@@ -16,7 +16,7 @@ describe('flatMap', () => {
         ],
       });
 
-      const result = await pipeline.run({
+      const result = await p.run({
         orders: [{ items: [1, 2] }, { items: [3, 4, 5] }],
       });
       expect(result.success).toBe(true);
@@ -26,7 +26,7 @@ describe('flatMap', () => {
     });
 
     it('preserves order across items', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           flatMap(
@@ -37,7 +37,7 @@ describe('flatMap', () => {
         ],
       });
 
-      const result = await pipeline.run({ words: ['ab', 'cd'] });
+      const result = await p.run({ words: ['ab', 'cd'] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.letters).toEqual(['a', 'b', 'c', 'd']);
@@ -45,7 +45,7 @@ describe('flatMap', () => {
     });
 
     it('returns empty array when collection is empty', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           flatMap(
@@ -56,7 +56,7 @@ describe('flatMap', () => {
         ],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.out).toEqual([]);
@@ -64,7 +64,7 @@ describe('flatMap', () => {
     });
 
     it('handles callbacks that return empty arrays', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           flatMap(
@@ -75,7 +75,7 @@ describe('flatMap', () => {
         ],
       });
 
-      const result = await pipeline.run({ items: [1, 2, 3] });
+      const result = await p.run({ items: [1, 2, 3] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.out).toEqual([]);
@@ -83,7 +83,7 @@ describe('flatMap', () => {
     });
 
     it('passes pipeline context to the callback', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           flatMap(
@@ -94,7 +94,7 @@ describe('flatMap', () => {
         ],
       });
 
-      const result = await pipeline.run({ nums: [1, 2], repeat: 3 });
+      const result = await p.run({ nums: [1, 2], repeat: 3 });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.expanded).toEqual([1, 1, 1, 2, 2, 2]);
@@ -104,7 +104,7 @@ describe('flatMap', () => {
 
   describe('async callback', () => {
     it('supports async callbacks', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           flatMap(
@@ -118,7 +118,7 @@ describe('flatMap', () => {
         ],
       });
 
-      const result = await pipeline.run({ ids: [1, 2] });
+      const result = await p.run({ ids: [1, 2] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.results).toEqual([1, 10, 2, 20]);
@@ -129,7 +129,7 @@ describe('flatMap', () => {
       const running: number[] = [];
       let maxConcurrent = 0;
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           flatMap(
@@ -146,14 +146,14 @@ describe('flatMap', () => {
         ],
       });
 
-      await pipeline.run({ items: [1, 2, 3] });
+      await p.run({ items: [1, 2, 3] });
       expect(maxConcurrent).toBe(3);
     });
   });
 
   describe('failure handling', () => {
     it('fails when a callback throws', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           flatMap(
@@ -167,7 +167,7 @@ describe('flatMap', () => {
         ],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.message).toContain('callback boom');
@@ -175,7 +175,7 @@ describe('flatMap', () => {
     });
 
     it('fails when collection selector throws', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           flatMap(
@@ -188,7 +188,7 @@ describe('flatMap', () => {
         ],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.message).toBe('selector boom');
@@ -196,7 +196,7 @@ describe('flatMap', () => {
     });
 
     it('fails when async callback rejects', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           flatMap(
@@ -209,7 +209,7 @@ describe('flatMap', () => {
         ],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.message).toContain('async boom');
@@ -225,7 +225,7 @@ describe('flatMap', () => {
         run: async () => ({ groups: [[1, 2], [3], [4, 5, 6]] }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           setup,
@@ -237,7 +237,7 @@ describe('flatMap', () => {
         ],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.all).toEqual([1, 2, 3, 4, 5, 6]);
@@ -245,7 +245,7 @@ describe('flatMap', () => {
     });
 
     it('composes with filter', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           flatMap(
@@ -261,7 +261,7 @@ describe('flatMap', () => {
         ],
       });
 
-      const result = await pipeline.run({
+      const result = await p.run({
         groups: [
           [1, 2, 3],
           [4, 5, 6],
@@ -274,7 +274,7 @@ describe('flatMap', () => {
     });
 
     it('works with the builder API', async () => {
-      const pipeline = createPipeline<{ groups: number[][] }>('test')
+      const p = createPipeline<{ groups: number[][] }>('test')
         .step(
           flatMap(
             'flat',
@@ -284,7 +284,7 @@ describe('flatMap', () => {
         )
         .build();
 
-      const result = await pipeline.run({ groups: [[1], [2, 3]] });
+      const result = await p.run({ groups: [[1], [2, 3]] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.flat).toEqual([1, 2, 3]);
@@ -294,7 +294,7 @@ describe('flatMap', () => {
 
   describe('metadata', () => {
     it('uses a descriptive step name', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           flatMap(
@@ -305,7 +305,7 @@ describe('flatMap', () => {
         ],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.meta.stepsExecuted).toEqual(['flatMap(items)']);
     });
   });

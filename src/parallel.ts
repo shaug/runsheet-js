@@ -1,15 +1,16 @@
 import type {
+  AggregateResult,
+  AggregateStep,
   ExtractProvides,
   ExtractRequires,
   Step,
   StepContext,
   StepOutput,
-  StepResult,
   TypedStep,
   UnionToIntersection,
 } from './types.js';
 import type { AsContext } from './internal.js';
-import { toError, baseMeta, stepSuccess, stepFailure } from './internal.js';
+import { toError, aggregateMeta, aggregateSuccess, aggregateFailure } from './internal.js';
 import { PredicateError, RollbackError } from './errors.js';
 import { isConditionalStep } from './when.js';
 
@@ -59,8 +60,8 @@ async function executeInner(step: Step, ctx: Readonly<StepContext>): Promise<Inn
  * steps are rolled back in reverse array order before the failure
  * propagates.
  *
- * The returned step acts as a single step from the pipeline's
- * perspective — middleware wraps the group as a whole.
+ * Returns an {@link AggregateStep} with orchestration metadata
+ * tracking which inner steps executed and which were skipped.
  *
  * Inner steps retain their own `requires`/`provides` validation,
  * `retry`, and `timeout` behavior. Conditional steps (via `when()`)
@@ -68,7 +69,7 @@ async function executeInner(step: Step, ctx: Readonly<StepContext>): Promise<Inn
  *
  * @example
  * ```ts
- * const pipeline = buildPipeline({
+ * const p = pipeline({
  *   name: 'checkout',
  *   steps: [
  *     validateOrder,
@@ -79,13 +80,13 @@ async function executeInner(step: Step, ctx: Readonly<StepContext>): Promise<Inn
  * ```
  *
  * @param steps - Two or more steps to execute concurrently.
- * @returns A frozen {@link TypedStep} whose `Requires` is the
+ * @returns A frozen {@link AggregateStep} whose `Requires` is the
  *   intersection of all inner steps' requires, and `Provides` is the
  *   intersection of all inner steps' provides.
  */
 export function parallel<S extends readonly TypedStep[]>(
   ...steps: [...S]
-): TypedStep<
+): AggregateStep<
   AsContext<UnionToIntersection<ExtractRequires<S[number]>>>,
   AsContext<UnionToIntersection<ExtractProvides<S[number]>>>
 > {
@@ -93,9 +94,8 @@ export function parallel<S extends readonly TypedStep[]>(
   const innerSteps: readonly Step[] = steps;
 
   // ----- run: execute all inner steps concurrently ----- //
-  const run = async (ctx: Readonly<StepContext>): Promise<StepResult<StepOutput>> => {
+  const run = async (ctx: Readonly<StepContext>): Promise<AggregateResult<StepOutput>> => {
     const frozenCtx = Object.freeze({ ...ctx });
-    const meta = baseMeta(name, frozenCtx);
 
     const settled = await Promise.allSettled(
       innerSteps.map((step) => executeInner(step, frozenCtx)),
@@ -103,15 +103,21 @@ export function parallel<S extends readonly TypedStep[]>(
 
     const succeeded: { step: Step; output: StepOutput }[] = [];
     const allErrors: Error[] = [];
+    const executed: string[] = [];
+    const skipped: string[] = [];
 
     for (const s of settled) {
       if (s.status === 'rejected') {
         allErrors.push(toError(s.reason));
       } else {
         const r = s.value;
-        if (r.skipped) continue;
+        if (r.skipped) {
+          skipped.push(r.step.name);
+          continue;
+        }
         if (r.output) {
           succeeded.push({ step: r.step, output: r.output });
+          executed.push(r.step.name);
         } else if (r.error) {
           allErrors.push(r.error);
         }
@@ -136,7 +142,8 @@ export function parallel<S extends readonly TypedStep[]>(
         allErrors.length === 1
           ? allErrors[0]
           : new AggregateError(allErrors, `${name}: ${allErrors.length} step(s) failed`);
-      return stepFailure(error, meta, name);
+      const meta = aggregateMeta(name, frozenCtx, executed, skipped);
+      return aggregateFailure(error, meta, name);
     }
 
     // Merge outputs in array order (deterministic)
@@ -145,7 +152,8 @@ export function parallel<S extends readonly TypedStep[]>(
       Object.assign(merged, output);
     }
 
-    return stepSuccess(merged, meta);
+    const meta = aggregateMeta(name, frozenCtx, executed, skipped);
+    return aggregateSuccess(merged, meta);
   };
 
   // ----- rollback: called when a later sequential step fails ----- //
@@ -174,11 +182,11 @@ export function parallel<S extends readonly TypedStep[]>(
     name,
     requires: undefined,
     provides: undefined,
-    run: run as Step['run'],
+    run,
     rollback,
     retry: undefined,
     timeout: undefined,
-  }) as unknown as TypedStep<
+  }) as unknown as AggregateStep<
     AsContext<UnionToIntersection<ExtractRequires<S[number]>>>,
     AsContext<UnionToIntersection<ExtractProvides<S[number]>>>
   >;

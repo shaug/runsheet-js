@@ -20,7 +20,7 @@ import { toError, baseMeta, stepSuccess, stepFailure } from './internal.js';
  * @example
  * ```ts
  * // Expand orders into line items
- * const pipeline = buildPipeline({
+ * const pipeline = pipeline({
  *   name: 'process',
  *   steps: [
  *     flatMap(

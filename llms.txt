@@ -119,20 +119,20 @@ RetryPolicy type:
 - backoff?: 'linear' | 'exponential' (default 'linear')
 - retryIf?: (errors: Error[]) => boolean — return false to stop retrying
 
-### buildPipeline
+### pipeline
 
 Build a pipeline from an array of steps. The result type is inferred from the
 steps.
 
 ```typescript
-import { buildPipeline } from 'runsheet';
+import { pipeline } from 'runsheet';
 
-const pipeline = buildPipeline({
+const p = pipeline({
   name: 'checkout',
   steps: [fetchUser, chargePayment, sendEmail],
 });
 
-const result = await pipeline.run({ userId: '123', amount: 50 });
+const result = await p.run({ userId: '123', amount: 50 });
 
 if (result.success) {
   result.data.chargeId; // string — fully typed
@@ -145,7 +145,7 @@ if (result.success) {
 Optional argsSchema validates pipeline input:
 
 ```typescript
-const pipeline = buildPipeline({
+const p = pipeline({
   name: 'checkout',
   steps: [fetchUser, chargePayment],
   argsSchema: z.object({ userId: z.string(), amount: z.number() }),
@@ -156,7 +156,7 @@ Use `strict: true` to detect provides key collisions at build time. Throws a
 RunsheetError with code 'STRICT_OVERLAP' if two steps provide the same key:
 
 ```typescript
-const pipeline = buildPipeline({
+const p = pipeline({
   name: 'checkout',
   steps: [fetchUser, chargePayment],
   strict: true,
@@ -165,12 +165,12 @@ const pipeline = buildPipeline({
 
 ### Pipeline composition
 
-Pipelines are steps — buildPipeline returns a TypedStep. A pipeline can be used
+Pipelines are steps — pipeline returns an AggregateStep. A pipeline can be used
 directly as a step in another pipeline's steps array:
 
 ```typescript
-const inner = buildPipeline({ name: 'inner', steps: [a, b] });
-const outer = buildPipeline({ name: 'outer', steps: [inner, c, d] });
+const inner = pipeline({ name: 'inner', steps: [a, b] });
+const outer = pipeline({ name: 'outer', steps: [inner, c, d] });
 ```
 
 If a later outer step fails, the inner pipeline's steps are rolled back.
@@ -217,7 +217,7 @@ createPipeline('checkout', z.object({ userId: z.string() }), { strict: true })
 ```typescript
 import { parallel } from 'runsheet';
 
-const pipeline = buildPipeline({
+const p = pipeline({
   name: 'checkout',
   steps: [
     validateOrder,
@@ -238,7 +238,7 @@ their own requires/provides validation, retry, and timeout. Conditional steps
 ```typescript
 import { choice } from 'runsheet';
 
-const pipeline = buildPipeline({
+const p = pipeline({
   name: 'checkout',
   steps: [
     validateOrder,
@@ -263,7 +263,7 @@ code 'CHOICE_NO_MATCH'. Only the matched branch participates in rollback.
 import { map } from 'runsheet';
 
 // Function form — items can be any type
-const pipeline = buildPipeline({
+const p = pipeline({
   name: 'notify',
   steps: [
     map(
@@ -278,7 +278,7 @@ const pipeline = buildPipeline({
 });
 
 // Step form — reuse existing steps, item spread into context
-const pipeline = buildPipeline({
+const p = pipeline({
   name: 'process',
   steps: [map('results', (ctx) => ctx.items, processItem)],
 });
@@ -294,7 +294,7 @@ On partial failure, succeeded items are rolled back (step form only).
 ```typescript
 import { filter, map } from 'runsheet';
 
-const pipeline = buildPipeline({
+const p = pipeline({
   name: 'notify',
   steps: [
     filter(
@@ -317,7 +317,7 @@ operation).
 ```typescript
 import { flatMap } from 'runsheet';
 
-const pipeline = buildPipeline({
+const p = pipeline({
   name: 'process',
   steps: [
     flatMap(
@@ -363,7 +363,7 @@ testing, swap in mocks at the call site.
 ```typescript
 import { when } from 'runsheet';
 
-const pipeline = buildPipeline({
+const p = pipeline({
   name: 'checkout',
   steps: [
     fetchUser,
@@ -390,7 +390,7 @@ const timing: StepMiddleware = (step, next) => async (ctx) => {
   return result;
 };
 
-const pipeline = buildPipeline({
+const p = pipeline({
   name: 'checkout',
   steps: [fetchUser, chargePayment],
   middleware: [timing],
@@ -451,12 +451,13 @@ Application errors (thrown from step run functions) pass through as-is.
 
 ## Key exports
 
-Functions: defineStep, buildPipeline, createPipeline, when, parallel, choice,
-map, flatMap, filter Classes: RunsheetError, RequiresValidationError,
+Functions: defineStep, pipeline, createPipeline, when, parallel, choice, map,
+flatMap, filter Classes: RunsheetError, RequiresValidationError,
 ProvidesValidationError, ArgsValidationError, PredicateError, TimeoutError,
 RetryExhaustedError, StrictOverlapError, ChoiceNoMatchError, RollbackError,
-UnknownError Types: Step, TypedStep, StepConfig, StepContext, StepOutput,
-StepSchema, RetryPolicy, StepResult, StepSuccess, StepFailure, StepMeta,
+UnknownError Types: Step, TypedStep, AggregateStep, StepConfig, StepContext,
+StepOutput, StepSchema, RetryPolicy, StepResult, StepSuccess, StepFailure,
+StepMeta, AggregateResult, AggregateSuccess, AggregateFailure, AggregateMeta,
 RollbackReport, RollbackFailure, PipelineBuilder, PipelineConfig,
 StepMiddleware, StepInfo, StepExecutor, ConditionalStep, RunsheetErrorCode,
 ExtractRequires, ExtractProvides

@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import {
-  defineStep,
-  buildPipeline,
-  createPipeline,
-  parallel,
-  when,
-  RunsheetError,
-} from './index.js';
+import { defineStep, pipeline, createPipeline, parallel, when, RunsheetError } from './index.js';
 
 describe('parallel', () => {
   const stepA = defineStep({
@@ -24,12 +17,12 @@ describe('parallel', () => {
 
   describe('basic execution', () => {
     it('runs steps concurrently and merges outputs', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [parallel(stepA, stepB)],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data).toEqual({ a: 'hello', b: 42 });
@@ -44,12 +37,12 @@ describe('parallel', () => {
         run: async (ctx) => ({ c: ctx.b > 10 }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [parallel(stepA, stepB), stepC],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data).toEqual({ a: 'hello', b: 42, c: true });
@@ -57,9 +50,9 @@ describe('parallel', () => {
     });
 
     it('works with the builder API', async () => {
-      const pipeline = createPipeline('test').step(parallel(stepA, stepB)).build();
+      const p = createPipeline('test').step(parallel(stepA, stepB)).build();
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data).toEqual({ a: 'hello', b: 42 });
@@ -91,12 +84,12 @@ describe('parallel', () => {
         },
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [parallel(slow, fast)],
       });
 
-      await pipeline.run({});
+      await p.run({});
       // Both start before either ends
       expect(order.indexOf('fast-start')).toBeLessThan(order.indexOf('slow-end'));
     });
@@ -111,12 +104,12 @@ describe('parallel', () => {
         },
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [parallel(stepA, failing)],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.failedStep).toBe('parallel(stepA, failing)');
@@ -132,12 +125,12 @@ describe('parallel', () => {
         run: async (ctx) => ({ greeting: `Hi ${ctx.name}` }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [parallel(needsName)],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -153,12 +146,12 @@ describe('parallel', () => {
         run: async () => ({ count: 'not a number' }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [parallel(badProvides)],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -189,12 +182,12 @@ describe('parallel', () => {
         },
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [parallel(succeeds, fails)],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       expect(rolledBack).toEqual(['succeeds']);
     });
@@ -227,12 +220,12 @@ describe('parallel', () => {
         },
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [parallel(withRollbackA, withRollbackB), laterFails],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       // Both inner steps should be rolled back in reverse array order
       expect(rolledBack).toEqual(['B', 'A']);
@@ -275,12 +268,12 @@ describe('parallel', () => {
         },
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [parallel(step1, step2, step3), laterFails],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       // step3 and step1 rollback still ran despite step2 throwing
       expect(rolledBack).toContain('step1');
@@ -305,12 +298,12 @@ describe('parallel', () => {
         }),
       );
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [parallel(alwaysRun, conditional)],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data).toEqual({ ran: true });
@@ -329,12 +322,12 @@ describe('parallel', () => {
         }),
       );
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [parallel(bad)],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -345,13 +338,23 @@ describe('parallel', () => {
 
   describe('metadata', () => {
     it('uses a descriptive step name', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [parallel(stepA, stepB)],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.meta.stepsExecuted).toEqual(['parallel(stepA, stepB)']);
+    });
+
+    it('reports inner steps executed in its own aggregate meta', async () => {
+      const par = parallel(stepA, stepB);
+      const result = await par.run({});
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.meta.stepsExecuted).toEqual(['stepA', 'stepB']);
+        expect(result.meta.stepsSkipped).toEqual([]);
+      }
     });
   });
 
@@ -366,12 +369,12 @@ describe('parallel', () => {
         },
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [parallel(slow)],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);

@@ -304,13 +304,14 @@ export type StepMeta = {
 };
 
 /**
- * Extended metadata for pipeline execution results.
+ * Extended metadata for orchestrator results (pipelines, parallel,
+ * choice).
  *
  * Includes orchestration detail — which steps ran and which were
- * skipped — on top of the base {@link StepMeta}. Only present on
- * results from `buildPipeline()` / `createPipeline().build()`.
+ * skipped — on top of the base {@link StepMeta}. Present on results
+ * from `pipeline()`, `parallel()`, and `choice()`.
  */
-export type PipelineMeta = StepMeta & {
+export type AggregateMeta = StepMeta & {
   /** Names of steps that executed successfully, in order. */
   readonly stepsExecuted: readonly string[];
   /** Names of conditional steps that were skipped (predicate returned false). */
@@ -373,37 +374,37 @@ export type StepFailure = {
 export type StepResult<T> = StepSuccess<T> | StepFailure;
 
 // ---------------------------------------------------------------------------
-// Pipeline result types (extends StepResult with richer metadata)
+// Aggregate result types (extends StepResult with richer metadata)
 // ---------------------------------------------------------------------------
 
 /**
- * A successful pipeline result.
+ * A successful orchestrator result.
  *
- * Identical to {@link StepSuccess} but with {@link PipelineMeta}
+ * Identical to {@link StepSuccess} but with {@link AggregateMeta}
  * instead of {@link StepMeta}, providing orchestration detail.
  *
  * @typeParam T - The accumulated output type.
  */
-export type PipelineSuccess<T> = {
+export type AggregateSuccess<T> = {
   readonly success: true;
-  /** The accumulated context after all steps. */
+  /** The accumulated output after all inner steps. */
   readonly data: T;
-  /** Pipeline execution metadata including step tracking. */
-  readonly meta: PipelineMeta;
+  /** Orchestrator execution metadata including step tracking. */
+  readonly meta: AggregateMeta;
 };
 
 /**
- * A failed pipeline result.
+ * A failed orchestrator result.
  *
- * Identical to {@link StepFailure} but with {@link PipelineMeta}
+ * Identical to {@link StepFailure} but with {@link AggregateMeta}
  * instead of {@link StepMeta}, providing orchestration detail.
  */
-export type PipelineFailure = {
+export type AggregateFailure = {
   readonly success: false;
   /** The error that caused the failure. */
   readonly error: Error;
-  /** Pipeline execution metadata including step tracking. */
-  readonly meta: PipelineMeta;
+  /** Orchestrator execution metadata including step tracking. */
+  readonly meta: AggregateMeta;
   /** Name of the step that failed. */
   readonly failedStep: string;
   /** Report of which rollback handlers succeeded and which threw. */
@@ -411,16 +412,16 @@ export type PipelineFailure = {
 };
 
 /**
- * The result of running a pipeline — extends {@link StepResult} with
- * richer metadata.
+ * The result of running an orchestrator — extends {@link StepResult}
+ * with richer metadata.
  *
- * `PipelineResult<T>` is assignable to `StepResult<T>`, so pipelines
- * satisfy the `Step` interface while providing orchestration detail
- * to callers who know they have a pipeline.
+ * `AggregateResult<T>` is assignable to `StepResult<T>`, so
+ * orchestrators (`pipeline`, `parallel`, `choice`) satisfy the `Step`
+ * interface while providing orchestration detail to callers.
  *
  * ```ts
- * const pipeline = buildPipeline({ name: 'checkout', steps: [...] });
- * const result = await pipeline.run({ orderId: '123' });
+ * const checkout = pipeline({ name: 'checkout', steps: [...] });
+ * const result = await checkout.run({ orderId: '123' });
  * if (result.success) {
  *   result.meta.stepsExecuted; // string[] — which steps ran
  * } else {
@@ -432,30 +433,30 @@ export type PipelineFailure = {
  *
  * @typeParam T - The accumulated output type on success.
  */
-export type PipelineResult<T> = PipelineSuccess<T> | PipelineFailure;
+export type AggregateResult<T> = AggregateSuccess<T> | AggregateFailure;
 
 // ---------------------------------------------------------------------------
-// TypedPipeline — a step whose run() returns PipelineResult
+// AggregateStep — a step whose run() returns AggregateResult
 // ---------------------------------------------------------------------------
 
 /**
- * A pipeline with compile-time type information and rich result types.
+ * A step that orchestrates other steps and returns rich results.
  *
  * Extends {@link TypedStep} but narrows `run()` to return
- * {@link PipelineResult} instead of {@link StepResult}. This is the
- * type returned by `buildPipeline()` and `createPipeline().build()`.
+ * {@link AggregateResult} instead of {@link StepResult}. This is the
+ * type returned by `pipeline()`, `parallel()`, and `choice()`.
  *
- * Since `PipelineResult<T>` is assignable to `StepResult<T>`, a
- * `TypedPipeline` can be used anywhere a `TypedStep` is expected
+ * Since `AggregateResult<T>` is assignable to `StepResult<T>`, an
+ * `AggregateStep` can be used anywhere a `TypedStep` is expected
  * (e.g., in another pipeline's step array).
  *
- * @typeParam Args - The pipeline's input type.
+ * @typeParam Requires - The input type.
  * @typeParam Provides - The accumulated output type.
  */
-export type TypedPipeline<
-  Args extends StepContext = StepContext,
+export type AggregateStep<
+  Requires extends StepContext = StepContext,
   Provides extends StepContext = StepContext,
-> = Omit<TypedStep<Args, Provides>, 'run'> & {
-  /** Execute the pipeline and return a {@link PipelineResult}. */
-  readonly run: (ctx: Readonly<Args>) => Promise<PipelineResult<Provides>>;
+> = Omit<TypedStep<Requires, Provides>, 'run'> & {
+  /** Execute the orchestrator and return an {@link AggregateResult}. */
+  readonly run: (ctx: Readonly<Requires>) => Promise<AggregateResult<Provides>>;
 };

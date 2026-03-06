@@ -18,9 +18,9 @@ describe('createPipeline (builder)', () => {
   });
 
   it('builds a working pipeline', async () => {
-    const pipeline = createPipeline('test').step(addA).step(addB).build();
+    const p = createPipeline('test').step(addA).step(addB).build();
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data).toEqual({ a: 1, b: 2 });
@@ -35,9 +35,9 @@ describe('createPipeline (builder)', () => {
       run: async (ctx) => ({ greeting: `Hi ${ctx.name}` }),
     });
 
-    const pipeline = createPipeline<{ name: string }>('test').step(greet).build();
+    const p = createPipeline<{ name: string }>('test').step(greet).build();
 
-    const result = await pipeline.run({ name: 'Alice' });
+    const result = await p.run({ name: 'Alice' });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.greeting).toBe('Hi Alice');
@@ -45,7 +45,7 @@ describe('createPipeline (builder)', () => {
   });
 
   it('validates args with schema', async () => {
-    const pipeline = createPipeline('test', z.object({ name: z.string() }))
+    const p = createPipeline('test', z.object({ name: z.string() }))
       .step(
         defineStep({
           name: 'greet',
@@ -57,12 +57,12 @@ describe('createPipeline (builder)', () => {
       .build();
 
     // Valid args
-    const good = await pipeline.run({ name: 'Alice' });
+    const good = await p.run({ name: 'Alice' });
     expect(good.success).toBe(true);
 
     // Invalid args — deliberately passing wrong type to test runtime validation
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const bad = await pipeline.run({} as any);
+    const bad = await p.run({} as any);
     expect(bad.success).toBe(false);
     if (!bad.success) {
       expect(bad.error).toBeInstanceOf(RunsheetError);
@@ -78,9 +78,9 @@ describe('createPipeline (builder)', () => {
       return next(ctx);
     };
 
-    const pipeline = createPipeline('test').use(logger).step(addA).step(addB).build();
+    const p = createPipeline('test').use(logger).step(addA).step(addB).build();
 
-    await pipeline.run({});
+    await p.run({});
     expect(calls).toEqual(['addA', 'addB']);
   });
 
@@ -129,9 +129,9 @@ describe('createPipeline (builder)', () => {
       }),
     );
 
-    const pipeline = createPipeline('test').step(addA).step(conditional).build();
+    const p = createPipeline('test').step(addA).step(conditional).build();
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data).toEqual({ a: 1, doubled: 2 });
@@ -151,9 +151,9 @@ describe('createPipeline (builder)', () => {
       return next(ctx);
     };
 
-    const pipeline = createPipeline('test').use(logger).use(timer).step(addA).build();
+    const p = createPipeline('test').use(logger).use(timer).step(addA).build();
 
-    await pipeline.run({});
+    await p.run({});
     // logger is outermost (added first), timer is inner
     expect(calls).toEqual(['log-addA', 'time-addA']);
   });

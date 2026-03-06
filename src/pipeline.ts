@@ -1,5 +1,6 @@
 import type {
-  PipelineResult,
+  AggregateResult,
+  AggregateStep,
   RollbackFailure,
   RollbackReport,
   Step,
@@ -7,14 +8,13 @@ import type {
   StepOutput,
   StepResult,
   StepSchema,
-  TypedPipeline,
   ExtractProvides,
   UnionToIntersection,
 } from './types.js';
 import type { StepMiddleware } from './middleware.js';
 import { applyMiddleware } from './middleware.js';
 import { ArgsValidationError, PredicateError, StrictOverlapError } from './errors.js';
-import { toError, pipelineMeta, pipelineSuccess, pipelineFailure } from './internal.js';
+import { toError, aggregateMeta, aggregateSuccess, aggregateFailure } from './internal.js';
 import { isConditionalStep } from './when.js';
 
 // ---------------------------------------------------------------------------
@@ -24,7 +24,7 @@ import { isConditionalStep } from './when.js';
 /**
  * Internal configuration shape for the pipeline engine.
  *
- * Users typically don't construct this directly — use `buildPipeline()`
+ * Users typically don't construct this directly — use `pipeline()`
  * or `createPipeline()` instead.
  */
 export type PipelineConfig = {
@@ -135,11 +135,11 @@ async function executeRollback(executed: readonly ExecutedStepEntry[]): Promise<
 
 /**
  * Internal result of pipeline execution, pairing the user-facing
- * {@link StepResult} with the execution state needed for rollback
- * when this pipeline is used as a step in an outer pipeline.
+ * {@link AggregateResult} with the execution state needed for
+ * rollback when this pipeline is used as a step in an outer pipeline.
  */
 type ExecutionOutcome = {
-  result: PipelineResult<StepContext>;
+  result: AggregateResult<StepContext>;
   state: ExecutionState;
 };
 
@@ -162,9 +162,9 @@ async function executePipeline(
     if (!parsed.success) {
       const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ');
       const error = new ArgsValidationError(`${config.name} args: ${issues}`);
-      const meta = pipelineMeta(config.name, frozenArgs, [], []);
+      const meta = aggregateMeta(config.name, frozenArgs, [], []);
       const state = createExecutionState(frozenArgs);
-      return { result: pipelineFailure(error, meta, config.name), state };
+      return { result: aggregateFailure(error, meta, config.name), state };
     }
   }
 
@@ -183,13 +183,13 @@ async function executePipeline(
       const error = new PredicateError(`${step.name} predicate: ${cause.message}`);
       error.cause = cause;
       const rollback = await executeRollback(state.executed);
-      const meta = pipelineMeta(
+      const meta = aggregateMeta(
         config.name,
         frozenArgs,
         [...state.stepsExecuted],
         [...state.stepsSkipped],
       );
-      return { result: pipelineFailure(error, meta, step.name, rollback), state };
+      return { result: aggregateFailure(error, meta, step.name, rollback), state };
     }
 
     // Snapshot pre-step context
@@ -212,24 +212,24 @@ async function executePipeline(
     } catch (err) {
       const error = toError(err);
       const rollback = await executeRollback(state.executed);
-      const meta = pipelineMeta(
+      const meta = aggregateMeta(
         config.name,
         frozenArgs,
         [...state.stepsExecuted],
         [...state.stepsSkipped],
       );
-      return { result: pipelineFailure(error, meta, step.name, rollback), state };
+      return { result: aggregateFailure(error, meta, step.name, rollback), state };
     }
 
     if (!result.success) {
       const rollback = await executeRollback(state.executed);
-      const meta = pipelineMeta(
+      const meta = aggregateMeta(
         config.name,
         frozenArgs,
         [...state.stepsExecuted],
         [...state.stepsSkipped],
       );
-      return { result: pipelineFailure(result.error, meta, step.name, rollback), state };
+      return { result: aggregateFailure(result.error, meta, step.name, rollback), state };
     }
 
     // Track and accumulate
@@ -239,13 +239,13 @@ async function executePipeline(
     state.context = Object.freeze({ ...state.context, ...output });
   }
 
-  const meta = pipelineMeta(
+  const meta = aggregateMeta(
     config.name,
     frozenArgs,
     [...state.stepsExecuted],
     [...state.stepsSkipped],
   );
-  return { result: pipelineSuccess(state.context, meta), state };
+  return { result: aggregateSuccess(state.context, meta), state };
 }
 
 // ---------------------------------------------------------------------------
@@ -253,18 +253,19 @@ async function executePipeline(
 // ---------------------------------------------------------------------------
 
 /**
- * Build a pipeline from an array of steps.
+ * Create a pipeline from an array of steps.
  *
- * Returns a {@link TypedPipeline} — pipelines ARE steps. A pipeline can
- * be used directly in another pipeline's steps array for composition.
+ * Returns an {@link AggregateStep} — pipelines ARE steps. A pipeline
+ * can be used directly in another pipeline's steps array for
+ * composition.
  *
- * The `run()` method returns a {@link PipelineResult} which extends
+ * The `run()` method returns an {@link AggregateResult} which extends
  * {@link StepResult} with orchestration metadata (`stepsExecuted`,
  * `stepsSkipped`).
  *
  * @example
  * ```ts
- * const checkout = buildPipeline({
+ * const checkout = pipeline({
  *   name: 'checkout',
  *   steps: [validateOrder, chargePayment, sendConfirmation],
  *   middleware: [logging, timing],
@@ -278,7 +279,7 @@ async function executePipeline(
  * }
  *
  * // Compose: use checkout as a step in another pipeline
- * const mega = buildPipeline({
+ * const mega = pipeline({
  *   name: 'mega',
  *   steps: [checkout, shipOrder, notify],
  * });
@@ -287,19 +288,16 @@ async function executePipeline(
  * @typeParam Args - The pipeline's input type.
  * @typeParam S - The step types in the array.
  * @param config - Pipeline configuration.
- * @returns A frozen {@link TypedPipeline} whose `run()` returns a
- *   {@link PipelineResult}.
+ * @returns A frozen {@link AggregateStep} whose `run()` returns an
+ *   {@link AggregateResult}.
  */
-export function buildPipeline<
-  Args extends StepContext = StepContext,
-  S extends Step = Step,
->(config: {
+export function pipeline<Args extends StepContext = StepContext, S extends Step = Step>(config: {
   readonly name: string;
   readonly steps: readonly S[];
   readonly middleware?: readonly StepMiddleware[];
   readonly argsSchema?: StepSchema<Args>;
   readonly strict?: boolean;
-}): TypedPipeline<Args, Args & UnionToIntersection<ExtractProvides<S>>> {
+}): AggregateStep<Args, Args & UnionToIntersection<ExtractProvides<S>>> {
   if (config.strict) checkStrictOverlap(config.steps);
 
   const pipelineConfig: PipelineConfig = config as PipelineConfig;
@@ -310,7 +308,7 @@ export function buildPipeline<
   // steps via the rollback handler below.
   let capturedState: ExecutionState | null = null;
 
-  const run = async (ctx: Readonly<StepContext>): Promise<PipelineResult<StepOutput>> => {
+  const run = async (ctx: Readonly<StepContext>): Promise<AggregateResult<StepOutput>> => {
     capturedState = null;
     const outcome = await executePipeline(pipelineConfig, ctx as StepContext);
     if (outcome.result.success) {
@@ -335,5 +333,5 @@ export function buildPipeline<
     rollback,
     retry: undefined,
     timeout: undefined,
-  }) as unknown as TypedPipeline<Args, Args & UnionToIntersection<ExtractProvides<S>>>;
+  }) as unknown as AggregateStep<Args, Args & UnionToIntersection<ExtractProvides<S>>>;
 }

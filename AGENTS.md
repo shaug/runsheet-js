@@ -76,19 +76,19 @@ simplified markup format.
 - `Step` — runtime, non-generic type used by the pipeline engine
 - `TypedStep<Requires, Provides>` — compile-time typed wrapper returned by
   `defineStep()`, uses phantom brands for type tracking
-- `TypedPipeline<Args, Provides>` — extends `TypedStep` with `run()` returning
-  `PipelineResult` instead of `StepResult`
-- Pipelines ARE steps — `buildPipeline()` returns a `TypedPipeline`, which is
-  assignable to `TypedStep` for composition
+- `AggregateStep<R, P>` — extends `TypedStep` with `run()` returning
+  `AggregateResult` instead of `StepResult`
+- Three orchestrators return `AggregateStep`: `pipeline()`, `parallel()`,
+  `choice()` — all are steps that compose other steps
+- Three collection transforms return `TypedStep`: `map()`, `filter()`,
+  `flatMap()` — these transform data, not orchestrate steps
 - `StepResult<T>` — discriminated union (`StepSuccess<T> | StepFailure`) with
   single `error: Error` on failure (not an array)
-- `PipelineResult<T>` — extends `StepResult<T>` with `PipelineMeta`
-  (`stepsExecuted`, `stepsSkipped`). Only on pipeline results.
-- `StepMeta` is slim (`name`, `args`); `PipelineMeta extends StepMeta` adds
+- `AggregateResult<T>` — extends `StepResult<T>` with `AggregateMeta`
+  (`stepsExecuted`, `stepsSkipped`)
+- `StepMeta` is slim (`name`, `args`); `AggregateMeta extends StepMeta` adds
   orchestration detail
-- Single type-erasure cast point is in `defineStep()` — do not add others
-  (except `buildPipeline` which also casts)
-- `buildPipeline` infers accumulated output types from the steps array via
+- `pipeline` infers accumulated output types from the steps array via
   `ExtractProvides` + `UnionToIntersection`
 - Context is always `Object.freeze`'d at every step boundary
 

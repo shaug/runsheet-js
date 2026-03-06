@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, buildPipeline } from './index.js';
+import { defineStep, pipeline } from './index.js';
 import type { StepMiddleware } from './index.js';
 
 describe('middleware', () => {
@@ -27,13 +27,13 @@ describe('middleware', () => {
       return result;
     };
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [stepA, stepB],
       middleware: [timing],
     });
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(true);
     expect(timings).toHaveLength(2);
     expect(timings[0].step).toBe('stepA');
@@ -60,13 +60,13 @@ describe('middleware', () => {
       },
     });
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [tracked],
       middleware: [skipAll],
     });
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(true);
     // Step's run was never called — middleware short-circuited
     expect(executedSteps).toEqual([]);
@@ -94,13 +94,13 @@ describe('middleware', () => {
       run: async () => ({ done: true }),
     });
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [step],
       middleware: [outer, inner],
     });
 
-    await pipeline.run({});
+    await p.run({});
     expect(order).toEqual([
       'outer-before-step',
       'inner-before-step',
@@ -126,13 +126,13 @@ describe('middleware', () => {
       run: async (ctx) => ({ greeting: `Hi ${ctx.name}` }),
     });
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [needsName],
       middleware: [errorLogger],
     });
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(false);
     // Middleware saw the validation error
     expect(errors).toHaveLength(1);
@@ -149,13 +149,13 @@ describe('middleware', () => {
       run: async () => ({ done: true }),
     });
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [step],
       middleware: [exploding],
     });
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(false);
   });
 
@@ -181,13 +181,13 @@ describe('middleware', () => {
       return next(ctx);
     };
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [a, b],
       middleware: [explodeOnB],
     });
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.failedStep).toBe('b');
@@ -209,13 +209,13 @@ describe('middleware', () => {
       return next(ctx);
     };
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [stepA, stepB],
       middleware: [inspector],
     });
 
-    await pipeline.run({});
+    await p.run({});
     expect(stepInfos).toEqual([
       { name: 'stepA', hasRequires: false, hasProvides: true },
       { name: 'stepB', hasRequires: true, hasProvides: true },

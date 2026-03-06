@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, buildPipeline, UnknownError } from './index.js';
+import { defineStep, pipeline, UnknownError } from './index.js';
 
 describe('rollback', () => {
   it('executes rollbacks in reverse order on failure', async () => {
@@ -31,12 +31,12 @@ describe('rollback', () => {
       },
     });
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [a, b, c],
     });
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(false);
     expect(rollbackOrder).toEqual(['b', 'a']);
   });
@@ -69,12 +69,12 @@ describe('rollback', () => {
       },
     });
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [a, b, c],
     });
 
-    await pipeline.run({ initial: 'arg' });
+    await p.run({ initial: 'arg' });
 
     // b's rollback: pre-step context was {initial, a}, output was {b: 2}
     expect(rollbackArgs[0]).toEqual({
@@ -116,12 +116,12 @@ describe('rollback', () => {
       },
     });
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [a, b, c],
     });
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(false);
     // Both rollbacks were attempted despite b's failure
     expect(rollbackOrder).toEqual(['b', 'a']);
@@ -149,12 +149,12 @@ describe('rollback', () => {
       },
     });
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [a, b, c],
     });
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.rollback.completed).toEqual(['a']);
@@ -196,12 +196,12 @@ describe('rollback', () => {
       },
     });
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [a, b, c, d],
     });
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(false);
     // b has no rollback, so only c and a appear (reverse order)
     expect(rollbackOrder).toEqual(['c', 'a']);
@@ -232,12 +232,12 @@ describe('rollback', () => {
       },
     });
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [a, b],
     });
 
-    await pipeline.run({});
+    await p.run({});
     // b failed during run, so only a is rolled back
     expect(rollbackOrder).toEqual(['a']);
   });
@@ -255,12 +255,12 @@ describe('rollback', () => {
       },
     });
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [a],
     });
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(false);
     if (!result.success) {
       // Failed step itself is not rolled back, and no prior steps exist
@@ -286,12 +286,12 @@ describe('rollback', () => {
       },
     });
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [a, b],
     });
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.rollback.failed).toHaveLength(1);
@@ -308,12 +308,12 @@ describe('rollback', () => {
       rollback: async () => {},
     });
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [a],
     });
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(true);
     // No rollback property on success
     if (result.success) {

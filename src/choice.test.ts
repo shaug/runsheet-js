@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, buildPipeline, createPipeline, choice, RunsheetError } from './index.js';
+import { defineStep, pipeline, createPipeline, choice, RunsheetError } from './index.js';
 
 describe('choice', () => {
   const chargeCard = defineStep({
@@ -19,7 +19,7 @@ describe('choice', () => {
 
   describe('basic execution', () => {
     it('executes the first matching branch', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           choice(
@@ -29,7 +29,7 @@ describe('choice', () => {
         ],
       });
 
-      const result = await pipeline.run({ method: 'card', amount: 100 });
+      const result = await p.run({ method: 'card', amount: 100 });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.chargeId).toBe('card_100');
@@ -57,12 +57,12 @@ describe('choice', () => {
         },
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [choice([() => true, first], [() => true, second])],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.picked).toBe('first');
@@ -71,7 +71,7 @@ describe('choice', () => {
     });
 
     it('skips branches whose predicates return false', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           choice(
@@ -81,7 +81,7 @@ describe('choice', () => {
         ],
       });
 
-      const result = await pipeline.run({ method: 'bank', amount: 200 });
+      const result = await p.run({ method: 'bank', amount: 200 });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.chargeId).toBe('bank_200');
@@ -102,7 +102,7 @@ describe('choice', () => {
         run: async () => ({ sent: true }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           validate,
@@ -114,7 +114,7 @@ describe('choice', () => {
         ],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.chargeId).toBe('card_50');
@@ -123,7 +123,7 @@ describe('choice', () => {
     });
 
     it('works with the builder API', async () => {
-      const pipeline = createPipeline<{ method: string; amount: number }>('test')
+      const p = createPipeline<{ method: string; amount: number }>('test')
         .step(
           choice(
             [(ctx) => ctx.method === 'card', chargeCard],
@@ -132,7 +132,7 @@ describe('choice', () => {
         )
         .build();
 
-      const result = await pipeline.run({ method: 'bank', amount: 75 });
+      const result = await p.run({ method: 'bank', amount: 75 });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.chargeId).toBe('bank_75');
@@ -146,12 +146,12 @@ describe('choice', () => {
         run: async () => ({ chargeId: 'default_0' }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [choice([(ctx) => ctx.method === 'card', chargeCard], [() => true, defaultStep])],
       });
 
-      const result = await pipeline.run({ method: 'crypto', amount: 0 });
+      const result = await p.run({ method: 'crypto', amount: 0 });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.chargeId).toBe('default_0');
@@ -165,7 +165,7 @@ describe('choice', () => {
         run: async () => ({ chargeId: 'default_0' }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           choice(
@@ -175,7 +175,7 @@ describe('choice', () => {
         ],
       });
 
-      const result = await pipeline.run({ method: 'crypto', amount: 0 });
+      const result = await p.run({ method: 'crypto', amount: 0 });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.chargeId).toBe('default_0');
@@ -189,19 +189,19 @@ describe('choice', () => {
         run: async () => ({ chargeId: 'x' }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [choice([(ctx) => ctx.method === 'card', chargeCard], defaultStep)],
       });
 
-      const result = await pipeline.run({ method: 'crypto', amount: 0 });
+      const result = await p.run({ method: 'crypto', amount: 0 });
       expect(result.meta.stepsExecuted).toEqual(['choice(chargeCard, defaultCharge)']);
     });
   });
 
   describe('failure handling', () => {
     it('fails with CHOICE_NO_MATCH when no predicate matches', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           choice(
@@ -211,7 +211,7 @@ describe('choice', () => {
         ],
       });
 
-      const result = await pipeline.run({ method: 'crypto', amount: 100 });
+      const result = await p.run({ method: 'crypto', amount: 100 });
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -220,7 +220,7 @@ describe('choice', () => {
     });
 
     it('fails when a predicate throws', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           choice([
@@ -232,7 +232,7 @@ describe('choice', () => {
         ],
       });
 
-      const result = await pipeline.run({ amount: 100 });
+      const result = await p.run({ amount: 100 });
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -241,13 +241,13 @@ describe('choice', () => {
     });
 
     it('validates inner step requires', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [choice([() => true, chargeCard])],
       });
 
       // chargeCard requires { amount: number } — not provided
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -262,12 +262,12 @@ describe('choice', () => {
         run: async () => ({ chargeId: 123 as unknown as string }), // wrong type
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [choice([() => true, badProvides])],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -283,12 +283,12 @@ describe('choice', () => {
         },
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [choice([() => true, failing])],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.message.includes('step boom')).toBe(true);
@@ -316,12 +316,12 @@ describe('choice', () => {
         },
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [choice([() => true, withRollback]), laterFails],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       expect(rolledBack).toEqual(['withRollback']);
     });
@@ -354,12 +354,12 @@ describe('choice', () => {
         },
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [choice([(ctx) => ctx.pick === 'a', branchA], [() => true, branchB]), laterFails],
       });
 
-      const result = await pipeline.run({ pick: 'a' });
+      const result = await p.run({ pick: 'a' });
       expect(result.success).toBe(false);
       // Only branchA ran, so only branchA should be rolled back
       expect(rolledBack).toEqual(['branchA']);
@@ -368,13 +368,26 @@ describe('choice', () => {
 
   describe('metadata', () => {
     it('uses a descriptive step name', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [choice([() => true, chargeCard])],
       });
 
-      const result = await pipeline.run({ amount: 50 });
+      const result = await p.run({ amount: 50 });
       expect(result.meta.stepsExecuted).toEqual(['choice(chargeCard)']);
+    });
+
+    it('reports matched branch in its own aggregate meta', async () => {
+      const ch = choice(
+        [(ctx) => ctx.method === 'card', chargeCard],
+        [(ctx) => ctx.method === 'bank', chargeBankTransfer],
+      );
+      const result = await ch.run({ method: 'bank', amount: 75 });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.meta.stepsExecuted).toEqual(['chargeBankTransfer']);
+        expect(result.meta.stepsSkipped).toEqual([]);
+      }
     });
   });
 });

@@ -24,8 +24,8 @@ foundation with its own `StepResult` semantics and error handling.
   runs.
 - **Strongly typed steps.** Each step's `run`, `rollback`, `requires`, and
   `provides` carry concrete types. IDEs and typecheckers see exact input and
-  output shapes. Both `buildPipeline` and the builder API infer the full
-  accumulated output type.
+  output shapes. Both `pipeline` and the builder API infer the full accumulated
+  output type.
 - **Type-safe accumulated context.** Each step declares what it requires from
   context and what it provides. TypeScript enforces at compile time that a
   step's requirements are satisfied by prior steps' outputs + initial args.
@@ -35,10 +35,10 @@ foundation with its own `StepResult` semantics and error handling.
 - **Rollback with snapshots.** On failure at step N, rollback handlers for steps
   N-1...0 execute in reverse order. Each handler receives the pre-step snapshot
   and the step's output so it knows exactly what to undo.
-- **Unified execution model.** Pipelines are steps. `buildPipeline()` returns a
-  `TypedStep` — a pipeline can be used directly as a step in another pipeline's
-  steps array. Everything returns `StepResult`, whether it's a single step or a
-  composed pipeline.
+- **Unified execution model.** Pipelines are steps. `pipeline()` returns a
+  `AggregateStep` — a pipeline can be used directly as a step in another
+  pipeline's steps array. Everything returns `StepResult`, whether it's a single
+  step or a composed pipeline.
 - **Middleware.** Cross-cutting concerns (logging, timing, metrics, throttling)
   attach to the pipeline and wrap each step execution.
 
@@ -140,9 +140,9 @@ the runtime `Step` representation. This is safe because:
 3. The phantom brands preserve compile-time type tracking through the builder
    API without affecting runtime behavior.
 
-`buildPipeline` recovers concrete types from the steps array using
-`ExtractProvides` (which reads the phantom brands) and `UnionToIntersection` to
-produce the full accumulated output type.
+`pipeline` recovers concrete types from the steps array using `ExtractProvides`
+(which reads the phantom brands) and `UnionToIntersection` to produce the full
+accumulated output type.
 
 ### Context accumulation loop
 
@@ -180,7 +180,7 @@ return { completed, failed }
 
 ### How pipeline composition works
 
-`buildPipeline()` returns a `TypedStep` with a closure-captured execution state.
+`pipeline()` returns an `AggregateStep` with a closure-captured execution state.
 When used as a step in an outer pipeline:
 
 - The inner pipeline's `run` executes all its steps and returns a `StepResult`.
@@ -196,7 +196,7 @@ When used as a step in an outer pipeline:
 | Feature                | sunny/actor (Ruby)           | runsheet                             | composable-functions  | @fieldguide/pipeline       |
 | ---------------------- | ---------------------------- | ------------------------------------ | --------------------- | -------------------------- |
 | Declared I/O           | `input`/`output` macros      | `requires`/`provides` schemas        | Function signatures   | Args/Context/Results types |
-| Sequential composition | `play A, B, C`               | `buildPipeline({ steps })`           | `pipe(a, b, c)`       | Builder with stages        |
+| Sequential composition | `play A, B, C`               | `pipeline({ steps })`                | `pipe(a, b, c)`       | Builder with stages        |
 | Shared context         | Mutable result object        | Immutable accumulation               | No shared state       | Mutable context            |
 | Rollback               | `def rollback` (trust-based) | Snapshot-verified rollback           | Not supported         | Stage rollback             |
 | Middleware             | Not built-in                 | Built-in                             | `map`/`catchFailure`  | Express-style              |

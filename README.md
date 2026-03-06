@@ -44,7 +44,7 @@ A pipeline orchestration library with:
   on hover. Both sync and async `run` functions are supported.
 - **Type-safe accumulated context** — each step declares what it requires and
   provides. TypeScript enforces at compile time that requirements are satisfied,
-  and `buildPipeline` infers the full output type from the steps you pass.
+  and `pipeline` infers the full output type from the steps you pass.
 - **Immutable step boundaries** — context is frozen between steps. Each step
   receives a snapshot and returns only what it adds.
 - **Rollback with snapshots** — on failure, rollback handlers execute in reverse
@@ -127,9 +127,9 @@ integrity from one step to the next.
 ### Build and run a pipeline
 
 ```typescript
-import { buildPipeline } from 'runsheet';
+import { pipeline } from 'runsheet';
 
-const placeOrder = buildPipeline({
+const placeOrder = pipeline({
   name: 'placeOrder',
   steps: [validateOrder, chargePayment, sendConfirmation],
 });
@@ -153,12 +153,12 @@ the intersection of all step outputs, not an erased `Record<string, unknown>`.
 Pipelines are steps — use one pipeline as a step in another:
 
 ```typescript
-const checkout = buildPipeline({
+const checkout = pipeline({
   name: 'checkout',
   steps: [validateOrder, chargePayment, sendConfirmation],
 });
 
-const fullFlow = buildPipeline({
+const fullFlow = pipeline({
   name: 'fullFlow',
   steps: [checkout, shipOrder, notifyWarehouse],
 });
@@ -213,7 +213,7 @@ const logOrder = defineStep<{ order: { id: string } }, { loggedAt: Date }>({
 ```typescript
 import { when } from 'runsheet';
 
-const placeOrder = buildPipeline({
+const placeOrder = pipeline({
   name: 'placeOrder',
   steps: [
     validateOrder,
@@ -232,7 +232,7 @@ which steps were skipped in `result.meta.stepsSkipped`.
 Middleware wraps the entire step lifecycle including schema validation:
 
 ```typescript
-import { buildPipeline } from 'runsheet';
+import { pipeline } from 'runsheet';
 import type { StepMiddleware } from 'runsheet';
 
 const timing: StepMiddleware = (step, next) => async (ctx) => {
@@ -249,7 +249,7 @@ const logging: StepMiddleware = (step, next) => async (ctx) => {
   return result;
 };
 
-const placeOrder = buildPipeline({
+const placeOrder = pipeline({
   name: 'placeOrder',
   steps: [validateOrder, chargePayment, sendConfirmation],
   middleware: [logging, timing],
@@ -305,7 +305,7 @@ Run steps concurrently with `parallel()`. Outputs merge in array order:
 ```typescript
 import { parallel } from 'runsheet';
 
-const placeOrder = buildPipeline({
+const placeOrder = pipeline({
   name: 'placeOrder',
   steps: [
     validateOrder,
@@ -368,7 +368,7 @@ Functions Choice state:
 ```typescript
 import { choice } from 'runsheet';
 
-const placeOrder = buildPipeline({
+const placeOrder = pipeline({
   name: 'placeOrder',
   steps: [
     validateOrder,
@@ -396,7 +396,7 @@ like an AWS Step Functions Map state:
 import { map } from 'runsheet';
 
 // Function form — items can be any type
-const pipeline = buildPipeline({
+const p = pipeline({
   name: 'notify',
   steps: [
     map(
@@ -411,7 +411,7 @@ const pipeline = buildPipeline({
 });
 
 // Step form — reuse existing steps
-const pipeline = buildPipeline({
+const p = pipeline({
   name: 'process',
   steps: [map('results', (ctx) => ctx.items, processItem)],
 });
@@ -428,7 +428,7 @@ only).
 ```typescript
 import { filter, map } from 'runsheet';
 
-const pipeline = buildPipeline({
+const p = pipeline({
   name: 'notify',
   steps: [
     filter(
@@ -460,7 +460,7 @@ pure operation).
 ```typescript
 import { flatMap } from 'runsheet';
 
-const pipeline = buildPipeline({
+const p = pipeline({
   name: 'process',
   steps: [
     flatMap(
@@ -562,10 +562,11 @@ schemas or generics you provide.
 | `retry`    | `RetryPolicy`           | Optional retry policy for transient failures       |
 | `timeout`  | `number`                | Optional max duration in ms for the `run` function |
 
-### `buildPipeline(config)`
+### `pipeline(config)`
 
-Build a pipeline from an array of steps. Returns a `TypedStep` whose `run()`
-returns a `StepResult` — `data` is the intersection of all step output types.
+Build a pipeline from an array of steps. Returns an `AggregateStep` whose
+`run()` returns an `AggregateResult` — `data` is the intersection of all step
+output types, `meta` includes `stepsExecuted` and `stepsSkipped`.
 
 | Option       | Type               | Description                                                       |
 | ------------ | ------------------ | ----------------------------------------------------------------- |

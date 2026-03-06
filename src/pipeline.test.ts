@@ -1,9 +1,9 @@
 import { describe, expect, it, assertType } from 'vitest';
 import { z } from 'zod';
-import { defineStep, buildPipeline, RunsheetError } from './index.js';
+import { defineStep, pipeline, RunsheetError } from './index.js';
 import type { StepResult } from './index.js';
 
-describe('buildPipeline', () => {
+describe('pipeline', () => {
   const stepA = defineStep({
     name: 'stepA',
     provides: z.object({ a: z.string() }),
@@ -26,12 +26,12 @@ describe('buildPipeline', () => {
 
   describe('context accumulation', () => {
     it('runs steps sequentially and accumulates context', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [stepA, stepB, stepC],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data).toEqual({ a: 'hello', b: 5, c: true });
@@ -46,12 +46,12 @@ describe('buildPipeline', () => {
         run: async (ctx) => ({ greeting: `Hi ${ctx.name}` }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [step],
       });
 
-      const result = await pipeline.run({ name: 'Alice' });
+      const result = await p.run({ name: 'Alice' });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data).toEqual({ name: 'Alice', greeting: 'Hi Alice' });
@@ -71,12 +71,12 @@ describe('buildPipeline', () => {
         run: async () => ({ status: 'done' }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'overwrite',
         steps: [first, second],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.status).toBe('done');
@@ -93,12 +93,12 @@ describe('buildPipeline', () => {
         run: async (ctx) => ({ greeting: `Hi ${ctx.name}` }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [needsName],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.failedStep).toBe('needsName');
@@ -116,12 +116,12 @@ describe('buildPipeline', () => {
         run: async () => ({ count: 'not a number' }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [badProvides],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.failedStep).toBe('badProvides');
@@ -143,24 +143,24 @@ describe('buildPipeline', () => {
         },
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [checkFreeze],
       });
 
-      await pipeline.run({ foo: 'bar' });
+      await p.run({ foo: 'bar' });
       expect(wasFrozen).toBe(true);
     });
   });
 
   describe('metadata', () => {
     it('includes pipeline name and step names on success', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'myPipeline',
         steps: [stepA, stepB],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.meta.name).toBe('myPipeline');
@@ -170,12 +170,12 @@ describe('buildPipeline', () => {
     });
 
     it('preserves original args in metadata', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [stepA],
       });
 
-      const result = await pipeline.run({ original: 'arg' });
+      const result = await p.run({ original: 'arg' });
       expect(result.meta.args).toEqual({ original: 'arg' });
     });
 
@@ -187,12 +187,12 @@ describe('buildPipeline', () => {
         },
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [stepA, failStep],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.meta.stepsExecuted).toEqual(['stepA']);
@@ -229,12 +229,12 @@ describe('buildPipeline', () => {
         },
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [a, b, c],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       expect(calls).toEqual(['a', 'b']);
     });
@@ -249,17 +249,17 @@ describe('buildPipeline', () => {
         run: async (ctx) => ({ greeting: `Hi ${ctx.name}` }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [step],
         argsSchema: z.object({ name: z.string() }),
       });
 
-      const good = await pipeline.run({ name: 'Alice' });
+      const good = await p.run({ name: 'Alice' });
       expect(good.success).toBe(true);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentionally passing wrong type
-      const bad = await pipeline.run({} as any);
+      const bad = await p.run({} as any);
       expect(bad.success).toBe(false);
       if (!bad.success) {
         expect(bad.error).toBeInstanceOf(RunsheetError);
@@ -272,12 +272,12 @@ describe('buildPipeline', () => {
 
   describe('empty pipeline', () => {
     it('succeeds with no steps', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'empty',
         steps: [],
       });
 
-      const result = await pipeline.run({ input: 'value' });
+      const result = await p.run({ input: 'value' });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data).toEqual({ input: 'value' });
@@ -301,12 +301,12 @@ describe('buildPipeline', () => {
         run: async (ctx) => ({ b: ctx.a + 1 }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'mixed',
         steps: [syncStep, asyncStep],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data).toEqual({ a: 1, b: 2 });
@@ -323,24 +323,24 @@ describe('buildPipeline', () => {
         },
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [step],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
     });
   });
 
   describe('type safety', () => {
-    it('buildPipeline result carries accumulated provides types', async () => {
-      const pipeline = buildPipeline({
+    it('pipeline result carries accumulated provides types', async () => {
+      const p = pipeline({
         name: 'typed',
         steps: [stepA, stepB, stepC],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       assertType<StepResult<{ a: string } & { b: number } & { c: boolean }>>(result);
       if (result.success) {
         assertType<string>(result.data.a);
@@ -364,12 +364,12 @@ describe('buildPipeline', () => {
         run: async () => ({ status: 'done' }),
       });
 
-      expect(() => buildPipeline({ name: 'test', steps: [first, second], strict: true })).toThrow(
+      expect(() => pipeline({ name: 'test', steps: [first, second], strict: true })).toThrow(
         RunsheetError,
       );
 
       try {
-        buildPipeline({ name: 'test', steps: [first, second], strict: true });
+        pipeline({ name: 'test', steps: [first, second], strict: true });
       } catch (err) {
         expect(err).toBeInstanceOf(RunsheetError);
         expect((err as RunsheetError).code).toBe('STRICT_OVERLAP');
@@ -381,7 +381,7 @@ describe('buildPipeline', () => {
 
     it('does not throw when keys are disjoint', () => {
       expect(() =>
-        buildPipeline({ name: 'test', steps: [stepA, stepB, stepC], strict: true }),
+        pipeline({ name: 'test', steps: [stepA, stepB, stepC], strict: true }),
       ).not.toThrow();
     });
 
@@ -392,7 +392,7 @@ describe('buildPipeline', () => {
       });
 
       expect(() =>
-        buildPipeline({ name: 'test', steps: [stepA, noProvides], strict: true }),
+        pipeline({ name: 'test', steps: [stepA, noProvides], strict: true }),
       ).not.toThrow();
     });
 
@@ -409,24 +409,24 @@ describe('buildPipeline', () => {
         run: async () => ({ status: 'done' }),
       });
 
-      expect(() => buildPipeline({ name: 'test', steps: [first, second] })).not.toThrow();
+      expect(() => pipeline({ name: 'test', steps: [first, second] })).not.toThrow();
     });
   });
 
   describe('pipeline object', () => {
     it('is frozen', () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [],
       });
 
-      expect(Object.isFrozen(pipeline)).toBe(true);
+      expect(Object.isFrozen(p)).toBe(true);
     });
   });
 
   describe('pipeline as step', () => {
     it('can be used as a step in another pipeline', async () => {
-      const inner = buildPipeline({
+      const inner = pipeline({
         name: 'inner',
         steps: [stepA, stepB],
       });
@@ -438,7 +438,7 @@ describe('buildPipeline', () => {
         run: async (ctx) => ({ d: `d_${ctx.b}` }),
       });
 
-      const outer = buildPipeline({
+      const outer = pipeline({
         name: 'outer',
         steps: [inner, stepD],
       });
@@ -475,7 +475,7 @@ describe('buildPipeline', () => {
         },
       });
 
-      const inner = buildPipeline({
+      const inner = pipeline({
         name: 'inner',
         steps: [a, b],
       });
@@ -487,7 +487,7 @@ describe('buildPipeline', () => {
         },
       });
 
-      const outer = buildPipeline({
+      const outer = pipeline({
         name: 'outer',
         steps: [inner, fails],
       });

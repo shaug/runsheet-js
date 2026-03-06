@@ -37,7 +37,7 @@ function isStep(x: unknown): x is Step {
  * @example
  * ```ts
  * // Function form
- * const pipeline = buildPipeline({
+ * const pipeline = pipeline({
  *   name: 'notify',
  *   steps: [
  *     map('emails', (ctx) => ctx.users, async (user) => {
@@ -48,7 +48,7 @@ function isStep(x: unknown): x is Step {
  * });
  *
  * // Step form
- * const pipeline = buildPipeline({
+ * const pipeline = pipeline({
  *   name: 'process',
  *   steps: [
  *     map('results', (ctx) => ctx.items, processItem),

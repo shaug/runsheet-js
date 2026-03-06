@@ -22,7 +22,7 @@ import { toError, baseMeta, stepSuccess, stepFailure } from './internal.js';
  *
  * @example
  * ```ts
- * const pipeline = buildPipeline({
+ * const pipeline = pipeline({
  *   name: 'notify',
  *   steps: [
  *     filter(

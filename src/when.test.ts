@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, buildPipeline, when, RunsheetError } from './index.js';
+import { defineStep, pipeline, when, RunsheetError } from './index.js';
 import { isConditionalStep } from './when.js';
 
 describe('when', () => {
@@ -21,12 +21,12 @@ describe('when', () => {
       }),
     );
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [always, conditional],
     });
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data).toEqual({ base: 10, doubled: 20 });
@@ -46,12 +46,12 @@ describe('when', () => {
       }),
     );
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [always, conditional],
     });
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data).toEqual({ base: 10 });
@@ -90,12 +90,12 @@ describe('when', () => {
       },
     });
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [a, skipped, fails],
     });
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(false);
     expect(rollbackOrder).toEqual(['a']);
   });
@@ -136,12 +136,12 @@ describe('when', () => {
       }),
     );
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [a, b, c],
     });
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(true);
     expect(executedSteps).toEqual(['a', 'c']);
     if (result.success) {
@@ -178,12 +178,12 @@ describe('when', () => {
       }),
     );
 
-    const pipeline = buildPipeline({
+    const p = pipeline({
       name: 'test',
       steps: [conditional],
     });
 
-    const result = await pipeline.run({});
+    const result = await p.run({});
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error).toBeInstanceOf(RunsheetError);

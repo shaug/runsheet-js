@@ -1,7 +1,7 @@
 import type {
-  PipelineFailure,
-  PipelineMeta,
-  PipelineSuccess,
+  AggregateFailure,
+  AggregateMeta,
+  AggregateSuccess,
   RollbackReport,
   StepContext,
   StepMeta,
@@ -29,25 +29,25 @@ export const EMPTY_ROLLBACK: RollbackReport = Object.freeze({
 /**
  * Create a {@link StepMeta} for a step execution.
  *
- * Used by `defineStep` and combinators. Contains only the step's
- * name and the arguments it received.
+ * Used by `defineStep` and collection combinators. Contains only
+ * the step's name and the arguments it received.
  */
 export function baseMeta(name: string, args: Readonly<StepContext>): StepMeta {
   return Object.freeze({ name, args });
 }
 
 /**
- * Create a {@link PipelineMeta} for a pipeline execution.
+ * Create an {@link AggregateMeta} for an orchestrator execution.
  *
- * Used by `buildPipeline` to produce results with orchestration
- * detail (which steps ran and which were skipped).
+ * Used by `pipeline`, `parallel`, and `choice` to produce results
+ * with orchestration detail (which steps ran and which were skipped).
  */
-export function pipelineMeta(
+export function aggregateMeta(
   name: string,
   args: Readonly<StepContext>,
   stepsExecuted: readonly string[],
   stepsSkipped: readonly string[],
-): PipelineMeta {
+): AggregateMeta {
   return Object.freeze({ name, args, stepsExecuted, stepsSkipped });
 }
 
@@ -55,7 +55,7 @@ export function pipelineMeta(
  * Create a successful {@link StepResult}.
  *
  * The returned object is frozen (immutable). Used by `defineStep`
- * and all combinators to produce consistent success results.
+ * and collection combinators to produce consistent success results.
  */
 export function stepSuccess<T extends StepOutput>(data: T, meta: StepMeta): StepSuccess<T> {
   return Object.freeze({ success: true, data, meta });
@@ -78,27 +78,27 @@ export function stepFailure(
 }
 
 /**
- * Create a successful {@link PipelineResult}.
+ * Create a successful {@link AggregateResult}.
  *
- * Like {@link stepSuccess} but with {@link PipelineMeta}.
+ * Like {@link stepSuccess} but with {@link AggregateMeta}.
  */
-export function pipelineSuccess<T extends StepOutput>(
+export function aggregateSuccess<T extends StepOutput>(
   data: T,
-  meta: PipelineMeta,
-): PipelineSuccess<T> {
+  meta: AggregateMeta,
+): AggregateSuccess<T> {
   return Object.freeze({ success: true, data, meta });
 }
 
 /**
- * Create a failed {@link PipelineResult}.
+ * Create a failed {@link AggregateResult}.
  *
- * Like {@link stepFailure} but with {@link PipelineMeta}.
+ * Like {@link stepFailure} but with {@link AggregateMeta}.
  */
-export function pipelineFailure(
+export function aggregateFailure(
   error: Error,
-  meta: PipelineMeta,
+  meta: AggregateMeta,
   failedStep: string,
   rollback: RollbackReport = EMPTY_ROLLBACK,
-): PipelineFailure {
+): AggregateFailure {
   return Object.freeze({ success: false, error, meta, failedStep, rollback });
 }

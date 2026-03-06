@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, buildPipeline, createPipeline, filter, map } from './index.js';
+import { defineStep, pipeline, createPipeline, filter, map } from './index.js';
 
 describe('filter', () => {
   describe('sync predicate', () => {
     it('keeps items where predicate returns true', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           filter(
@@ -16,7 +16,7 @@ describe('filter', () => {
         ],
       });
 
-      const result = await pipeline.run({ nums: [1, 2, 3, 4, 5, 6] });
+      const result = await p.run({ nums: [1, 2, 3, 4, 5, 6] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.evens).toEqual([2, 4, 6]);
@@ -24,7 +24,7 @@ describe('filter', () => {
     });
 
     it('preserves original order', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           filter(
@@ -35,7 +35,7 @@ describe('filter', () => {
         ],
       });
 
-      const result = await pipeline.run({ nums: [5, 1, 4, 2, 3, 6] });
+      const result = await p.run({ nums: [5, 1, 4, 2, 3, 6] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.big).toEqual([5, 4, 6]);
@@ -43,7 +43,7 @@ describe('filter', () => {
     });
 
     it('returns empty array when nothing matches', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           filter(
@@ -54,7 +54,7 @@ describe('filter', () => {
         ],
       });
 
-      const result = await pipeline.run({ nums: [1, 2, 3] });
+      const result = await p.run({ nums: [1, 2, 3] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.negative).toEqual([]);
@@ -62,7 +62,7 @@ describe('filter', () => {
     });
 
     it('handles empty collections', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           filter(
@@ -73,7 +73,7 @@ describe('filter', () => {
         ],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.out).toEqual([]);
@@ -81,7 +81,7 @@ describe('filter', () => {
     });
 
     it('passes pipeline context to the predicate', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           filter(
@@ -92,7 +92,7 @@ describe('filter', () => {
         ],
       });
 
-      const result = await pipeline.run({ nums: [1, 5, 10, 15], threshold: 8 });
+      const result = await p.run({ nums: [1, 5, 10, 15], threshold: 8 });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.above).toEqual([10, 15]);
@@ -102,7 +102,7 @@ describe('filter', () => {
 
   describe('async predicate', () => {
     it('supports async predicates', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           filter(
@@ -116,7 +116,7 @@ describe('filter', () => {
         ],
       });
 
-      const result = await pipeline.run({ ids: [1, 2, 3, 4] });
+      const result = await p.run({ ids: [1, 2, 3, 4] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.valid).toEqual([2, 4]);
@@ -127,7 +127,7 @@ describe('filter', () => {
       const running: number[] = [];
       let maxConcurrent = 0;
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           filter(
@@ -144,14 +144,14 @@ describe('filter', () => {
         ],
       });
 
-      await pipeline.run({ items: [1, 2, 3] });
+      await p.run({ items: [1, 2, 3] });
       expect(maxConcurrent).toBe(3);
     });
   });
 
   describe('failure handling', () => {
     it('fails when a predicate throws', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           filter(
@@ -165,7 +165,7 @@ describe('filter', () => {
         ],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.message).toContain('predicate boom');
@@ -173,7 +173,7 @@ describe('filter', () => {
     });
 
     it('fails when collection selector throws', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           filter(
@@ -186,7 +186,7 @@ describe('filter', () => {
         ],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.message).toBe('selector boom');
@@ -194,7 +194,7 @@ describe('filter', () => {
     });
 
     it('fails when async predicate rejects', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           filter(
@@ -207,7 +207,7 @@ describe('filter', () => {
         ],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.message).toContain('async boom');
@@ -223,7 +223,7 @@ describe('filter', () => {
         run: async () => ({ items: [1, 2, 3, 4, 5] }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           setup,
@@ -235,7 +235,7 @@ describe('filter', () => {
         ],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.odds).toEqual([1, 3, 5]);
@@ -243,7 +243,7 @@ describe('filter', () => {
     });
 
     it('composes with map', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           filter(
@@ -259,7 +259,7 @@ describe('filter', () => {
         ],
       });
 
-      const result = await pipeline.run({ nums: [1, 2, 3, 4] });
+      const result = await p.run({ nums: [1, 2, 3, 4] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.doubled).toEqual([4, 8]);
@@ -267,7 +267,7 @@ describe('filter', () => {
     });
 
     it('works with the builder API', async () => {
-      const pipeline = createPipeline<{ nums: number[] }>('test')
+      const p = createPipeline<{ nums: number[] }>('test')
         .step(
           filter(
             'big',
@@ -277,7 +277,7 @@ describe('filter', () => {
         )
         .build();
 
-      const result = await pipeline.run({ nums: [1, 2, 3, 4] });
+      const result = await p.run({ nums: [1, 2, 3, 4] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.big).toEqual([3, 4]);
@@ -287,7 +287,7 @@ describe('filter', () => {
 
   describe('metadata', () => {
     it('uses a descriptive step name', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           filter(
@@ -298,7 +298,7 @@ describe('filter', () => {
         ],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.meta.stepsExecuted).toEqual(['filter(active)']);
     });
   });

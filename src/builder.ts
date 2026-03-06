@@ -1,6 +1,6 @@
-import type { Step, StepContext, StepSchema, TypedPipeline, TypedStep } from './types.js';
+import type { AggregateStep, Step, StepContext, StepSchema, TypedStep } from './types.js';
 import type { StepMiddleware } from './middleware.js';
-import { buildPipeline } from './pipeline.js';
+import { pipeline } from './pipeline.js';
 
 // ---------------------------------------------------------------------------
 // Builder types
@@ -31,7 +31,7 @@ export type PipelineBuilder<Args extends StepContext, Ctx extends StepContext> =
    * The returned builder's `Ctx` expands to include the step's `Provides`.
    *
    * @typeParam Provides - The output type of the step being added.
-   * @param step - A {@link TypedStep} (from `defineStep`, `when`, `buildPipeline`, etc.).
+   * @param step - A {@link TypedStep} (from `defineStep`, `when`, `pipeline`, etc.).
    * @returns A new builder with the expanded context type.
    */
   readonly step: <Provides extends StepContext>(
@@ -50,10 +50,10 @@ export type PipelineBuilder<Args extends StepContext, Ctx extends StepContext> =
   readonly use: (...middleware: StepMiddleware[]) => PipelineBuilder<Args, Ctx>;
 
   /**
-   * Build the pipeline. Returns a {@link TypedPipeline} — pipelines are
-   * steps whose `run()` returns {@link PipelineResult}.
+   * Build the pipeline. Returns an {@link AggregateStep} — pipelines
+   * are steps whose `run()` returns {@link AggregateResult}.
    */
-  readonly build: () => TypedPipeline<Args, Ctx>;
+  readonly build: () => AggregateStep<Args, Ctx>;
 };
 
 // ---------------------------------------------------------------------------
@@ -85,13 +85,13 @@ function makeBuilder<Args extends StepContext, Ctx extends StepContext>(
       }),
 
     build: () =>
-      buildPipeline({
+      pipeline({
         name: state.name,
         steps: state.steps,
         middleware: state.middleware.length > 0 ? state.middleware : undefined,
         argsSchema: state.argsSchema as StepSchema<Args> | undefined,
         strict: state.strict || undefined,
-      }) as TypedPipeline<Args, Ctx>,
+      }) as AggregateStep<Args, Ctx>,
   });
 }
 

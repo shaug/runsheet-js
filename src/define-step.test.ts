@@ -1,7 +1,7 @@
 import { describe, expect, it, assertType } from 'vitest';
 import { z } from 'zod';
 import type { StepResult } from './index.js';
-import { defineStep, buildPipeline, RunsheetError } from './index.js';
+import { defineStep, pipeline, RunsheetError } from './index.js';
 
 describe('defineStep', () => {
   describe('with schemas', () => {
@@ -210,8 +210,8 @@ describe('defineStep', () => {
         },
       });
 
-      const pipeline = buildPipeline({ name: 'test', steps: [step] });
-      const result = await pipeline.run({});
+      const p = pipeline({ name: 'test', steps: [step] });
+      const result = await p.run({});
       expect(result.success).toBe(true);
       expect(attempts).toBe(3); // 1 initial + 2 retries
     });
@@ -225,8 +225,8 @@ describe('defineStep', () => {
         },
       });
 
-      const pipeline = buildPipeline({ name: 'test', steps: [step] });
-      const result = await pipeline.run({});
+      const p = pipeline({ name: 'test', steps: [step] });
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -255,8 +255,8 @@ describe('defineStep', () => {
         },
       });
 
-      const pipeline = buildPipeline({ name: 'test', steps: [step] });
-      const result = await pipeline.run({});
+      const p = pipeline({ name: 'test', steps: [step] });
+      const result = await p.run({});
       expect(result.success).toBe(false);
       expect(attempts).toBe(2); // initial + 1 retry, then retryIf returned false
       if (!result.success) {
@@ -280,8 +280,8 @@ describe('defineStep', () => {
         },
       });
 
-      const pipeline = buildPipeline({ name: 'test', steps: [step] });
-      await pipeline.run({});
+      const p = pipeline({ name: 'test', steps: [step] });
+      await p.run({});
 
       const gap1 = timestamps[1] - timestamps[0];
       const gap2 = timestamps[2] - timestamps[1];
@@ -304,8 +304,8 @@ describe('defineStep', () => {
         },
       });
 
-      const pipeline = buildPipeline({ name: 'test', steps: [step] });
-      await pipeline.run({});
+      const p = pipeline({ name: 'test', steps: [step] });
+      await p.run({});
 
       const gap1 = timestamps[1] - timestamps[0];
       const gap2 = timestamps[2] - timestamps[1];
@@ -335,8 +335,8 @@ describe('defineStep', () => {
         },
       });
 
-      const pipeline = buildPipeline({ name: 'test', steps: [step] });
-      const result = await pipeline.run({});
+      const p = pipeline({ name: 'test', steps: [step] });
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -353,8 +353,8 @@ describe('defineStep', () => {
         run: async () => ({ done: true }),
       });
 
-      const pipeline = buildPipeline({ name: 'test', steps: [step] });
-      const result = await pipeline.run({});
+      const p = pipeline({ name: 'test', steps: [step] });
+      const result = await p.run({});
       expect(result.success).toBe(true);
     });
 
@@ -384,8 +384,8 @@ describe('defineStep', () => {
         },
       });
 
-      const pipeline = buildPipeline({ name: 'test', steps: [step] });
-      const result = await pipeline.run({});
+      const p = pipeline({ name: 'test', steps: [step] });
+      const result = await p.run({});
       expect(result.success).toBe(true);
       expect(attempts).toBe(3);
     });

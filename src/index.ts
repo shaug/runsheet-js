@@ -13,7 +13,7 @@ export {
   UnknownError,
 } from './errors.js';
 export type { RunsheetErrorCode } from './errors.js';
-export { buildPipeline } from './pipeline.js';
+export { pipeline } from './pipeline.js';
 export type { PipelineConfig } from './pipeline.js';
 export { when } from './when.js';
 export type { ConditionalStep } from './when.js';
@@ -29,7 +29,7 @@ export type { PipelineBuilder } from './builder.js';
 export type {
   Step,
   TypedStep,
-  TypedPipeline,
+  AggregateStep,
   StepConfig,
   StepContext,
   StepOutput,
@@ -41,10 +41,10 @@ export type {
   StepSuccess,
   StepFailure,
   StepMeta,
-  PipelineResult,
-  PipelineSuccess,
-  PipelineFailure,
-  PipelineMeta,
+  AggregateResult,
+  AggregateSuccess,
+  AggregateFailure,
+  AggregateMeta,
   RollbackReport,
   RollbackFailure,
 } from './types.js';

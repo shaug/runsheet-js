@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, buildPipeline, createPipeline, map, RunsheetError } from './index.js';
+import { defineStep, pipeline, createPipeline, map, RunsheetError } from './index.js';
 
 describe('map', () => {
   describe('function callback', () => {
     it('maps over a collection and collects results under the key', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           map(
@@ -16,7 +16,7 @@ describe('map', () => {
         ],
       });
 
-      const result = await pipeline.run({ nums: [1, 2, 3] });
+      const result = await p.run({ nums: [1, 2, 3] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.doubled).toEqual([2, 4, 6]);
@@ -24,7 +24,7 @@ describe('map', () => {
     });
 
     it('passes pipeline context to the callback', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           map(
@@ -35,7 +35,7 @@ describe('map', () => {
         ],
       });
 
-      const result = await pipeline.run({ names: ['Alice', 'Bob'], prefix: 'Hello' });
+      const result = await p.run({ names: ['Alice', 'Bob'], prefix: 'Hello' });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.greetings).toEqual(['Hello Alice', 'Hello Bob']);
@@ -46,7 +46,7 @@ describe('map', () => {
       const running: number[] = [];
       let maxConcurrent = 0;
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           map(
@@ -63,12 +63,12 @@ describe('map', () => {
         ],
       });
 
-      await pipeline.run({ items: [1, 2, 3] });
+      await p.run({ items: [1, 2, 3] });
       expect(maxConcurrent).toBeGreaterThan(1);
     });
 
     it('fails when a callback throws', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           map(
@@ -82,7 +82,7 @@ describe('map', () => {
         ],
       });
 
-      const result = await pipeline.run({ items: [1, 2, 3] });
+      const result = await p.run({ items: [1, 2, 3] });
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.message).toContain('item 2 failed');
@@ -90,7 +90,7 @@ describe('map', () => {
     });
 
     it('handles empty collections', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           map(
@@ -101,7 +101,7 @@ describe('map', () => {
         ],
       });
 
-      const result = await pipeline.run({ items: [] });
+      const result = await p.run({ items: [] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.results).toEqual([]);
@@ -109,7 +109,7 @@ describe('map', () => {
     });
 
     it('fails when collection selector throws', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           map(
@@ -122,7 +122,7 @@ describe('map', () => {
         ],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(Error);
@@ -131,7 +131,7 @@ describe('map', () => {
     });
 
     it('supports sync callbacks', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           map(
@@ -142,7 +142,7 @@ describe('map', () => {
         ],
       });
 
-      const result = await pipeline.run({ nums: [1, 2, 3] });
+      const result = await p.run({ nums: [1, 2, 3] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.doubled).toEqual([2, 4, 6]);
@@ -159,14 +159,14 @@ describe('map', () => {
     });
 
     it('runs a step per item, merging item into context', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           map('results', (ctx) => (ctx.items as number[]).map((value) => ({ value })), processItem),
         ],
       });
 
-      const result = await pipeline.run({ items: [1, 2, 3] });
+      const result = await p.run({ items: [1, 2, 3] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.results).toEqual([
@@ -178,12 +178,12 @@ describe('map', () => {
     });
 
     it('validates step requires per item', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [map('results', () => [{ wrong: 'key' }], processItem)],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -209,12 +209,12 @@ describe('map', () => {
         },
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [map('results', () => [{ value: 1 }, { value: 2 }, { value: 3 }], step)],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       // Items 1 and 3 should have been rolled back
       expect(rolledBack.sort()).toEqual([1, 3]);
@@ -228,12 +228,12 @@ describe('map', () => {
         run: async (ctx) => ({ out: ctx.value as unknown as string }), // returns number, not string
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [map('results', () => [{ value: 1 }], step)],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -261,12 +261,12 @@ describe('map', () => {
         },
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [map('results', () => [{ value: 1 }, { value: 2 }, { value: 3 }], step), laterFails],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(false);
       expect(rolledBack.sort()).toEqual([1, 2, 3]);
     });
@@ -279,12 +279,12 @@ describe('map', () => {
         run: async (ctx) => ({ result: ctx.value * ctx.multiplier }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [map('results', (ctx) => (ctx.items as number[]).map((value) => ({ value })), step)],
       });
 
-      const result = await pipeline.run({ items: [1, 2, 3], multiplier: 5 });
+      const result = await p.run({ items: [1, 2, 3], multiplier: 5 });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.results).toEqual([{ result: 5 }, { result: 10 }, { result: 15 }]);
@@ -297,14 +297,14 @@ describe('map', () => {
         run: async (ctx) => ({ value: ctx.value ?? 'default' }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [map('results', () => [42, 'hello'] as unknown as Record<string, unknown>[], step)],
       });
 
       // Spreading a primitive into an object is a no-op ({ ...ctx, ...42 } === { ...ctx })
       // The step should still execute successfully
-      const result = await pipeline.run({ value: 'from-ctx' });
+      const result = await p.run({ value: 'from-ctx' });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.results).toHaveLength(2);
@@ -320,7 +320,7 @@ describe('map', () => {
         run: async () => ({ items: [1, 2, 3] }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           setup,
@@ -332,7 +332,7 @@ describe('map', () => {
         ],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.doubled).toEqual([2, 4, 6]);
@@ -340,7 +340,7 @@ describe('map', () => {
     });
 
     it('works with the builder API', async () => {
-      const pipeline = createPipeline<{ nums: number[] }>('test')
+      const p = createPipeline<{ nums: number[] }>('test')
         .step(
           map(
             'doubled',
@@ -350,7 +350,7 @@ describe('map', () => {
         )
         .build();
 
-      const result = await pipeline.run({ nums: [4, 5, 6] });
+      const result = await p.run({ nums: [4, 5, 6] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.doubled).toEqual([8, 10, 12]);
@@ -360,7 +360,7 @@ describe('map', () => {
 
   describe('metadata', () => {
     it('uses a descriptive step name for function form', async () => {
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [
           map(
@@ -371,7 +371,7 @@ describe('map', () => {
         ],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.meta.stepsExecuted).toEqual(['map(results)']);
     });
 
@@ -382,12 +382,12 @@ describe('map', () => {
         run: async () => ({ x: 1 }),
       });
 
-      const pipeline = buildPipeline({
+      const p = pipeline({
         name: 'test',
         steps: [map('results', () => [{}], step)],
       });
 
-      const result = await pipeline.run({});
+      const result = await p.run({});
       expect(result.meta.stepsExecuted).toEqual(['map(results, processItem)']);
     });
   });
