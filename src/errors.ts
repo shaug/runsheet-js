@@ -20,7 +20,8 @@ export type RunsheetErrorCode =
   | 'ARGS_VALIDATION'
   | 'PREDICATE'
   | 'TIMEOUT'
-  | 'RETRY_EXHAUSTED';
+  | 'RETRY_EXHAUSTED'
+  | 'STRICT_OVERLAP';
 
 /**
  * Base error class for all errors produced by the runsheet library.

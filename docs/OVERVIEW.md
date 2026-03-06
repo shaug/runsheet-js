@@ -218,8 +218,6 @@ return { completed, failed }
   connections, and external API clients. Currently these flow through args,
   which works but conflates infrastructure with business inputs. A dedicated
   injection mechanism would make step signatures cleaner and testing easier.
-- **`strict: true` pipeline flag** — optional key collision detection at build
-  time for teams that want to prevent unintentional `provides` overlap.
 
 <!-- Reference links — please keep alphabetized -->
 

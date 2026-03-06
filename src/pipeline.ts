@@ -36,7 +36,41 @@ export type PipelineConfig = {
   readonly middleware?: readonly StepMiddleware[];
   /** Optional schema that validates the pipeline's input arguments. */
   readonly argsSchema?: ParserSchema<StepContext>;
+  /**
+   * When `true`, throws at build time if two or more steps provide the
+   * same key. Only checks steps that have a `provides` schema with an
+   * inspectable `.shape` property (e.g., Zod objects). Steps without
+   * provides schemas are not checked.
+   */
+  readonly strict?: boolean;
 };
+
+// ---------------------------------------------------------------------------
+// Strict mode — detect provides key collisions at build time
+// ---------------------------------------------------------------------------
+
+function checkStrictOverlap(steps: readonly Step[]): void {
+  const seen = new Map<string, string>(); // key → step name
+
+  for (const step of steps) {
+    if (!step.provides) continue;
+
+    // Extract keys from schemas that expose .shape (e.g., Zod objects)
+    const shape = (step.provides as Record<string, unknown>).shape;
+    if (!shape || typeof shape !== 'object') continue;
+
+    for (const key of Object.keys(shape)) {
+      const existing = seen.get(key);
+      if (existing) {
+        throw new RunsheetError(
+          'STRICT_OVERLAP',
+          `strict mode: key "${key}" is provided by both "${existing}" and "${step.name}"`,
+        );
+      }
+      seen.set(key, step.name);
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Pipeline
@@ -380,7 +414,10 @@ export function buildPipeline<
   readonly steps: readonly S[];
   readonly middleware?: readonly StepMiddleware[];
   readonly argsSchema?: ParserSchema<Args>;
+  readonly strict?: boolean;
 }): Pipeline<Args, Args & UnionToIntersection<ExtractProvides<S>>> {
+  if (config.strict) checkStrictOverlap(config.steps);
+
   return Object.freeze({
     name: config.name,
     run: (args: Args) => executePipeline(config as PipelineConfig, args),

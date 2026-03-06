@@ -361,20 +361,30 @@ Build a pipeline from an array of steps. The result type is inferred from the
 steps — `pipeline.run()` returns a `PipelineResult` whose `data` is the
 intersection of all step output types.
 
-| Option       | Type               | Description                                   |
-| ------------ | ------------------ | --------------------------------------------- |
-| `name`       | `string`           | Pipeline name                                 |
-| `steps`      | `Step[]`           | Steps to execute in order                     |
-| `middleware` | `StepMiddleware[]` | Optional middleware                           |
-| `argsSchema` | `ZodSchema`        | Optional schema for pipeline input validation |
+| Option       | Type               | Description                                                       |
+| ------------ | ------------------ | ----------------------------------------------------------------- |
+| `name`       | `string`           | Pipeline name                                                     |
+| `steps`      | `Step[]`           | Steps to execute in order                                         |
+| `middleware` | `StepMiddleware[]` | Optional middleware                                               |
+| `argsSchema` | `ZodSchema`        | Optional schema for pipeline input validation                     |
+| `strict`     | `boolean`          | Optional — throws at build time if two steps provide the same key |
 
-### `createPipeline(name, argsSchema?)`
+### `createPipeline(name, argsSchema?, options?)`
 
 Start a fluent pipeline builder. Returns a `PipelineBuilder` with:
 
 - `.step(step)` — add a step
 - `.use(...middleware)` — add middleware
 - `.build()` — produce the pipeline
+
+The second argument accepts a schema (for runtime args validation) or an options
+object:
+
+```typescript
+createPipeline('order', z.object({ id: z.string() }));
+createPipeline('order', { strict: true });
+createPipeline('order', z.object({ id: z.string() }), { strict: true });
+```
 
 ### `when(predicate, step)`
 

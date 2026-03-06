@@ -67,6 +67,7 @@ type BuilderState = {
   readonly steps: readonly Step[];
   readonly middleware: readonly StepMiddleware[];
   readonly argsSchema: ParserSchema<StepContext> | undefined;
+  readonly strict: boolean;
 };
 
 function makeBuilder<Args extends StepContext, Ctx extends StepContext>(
@@ -91,6 +92,7 @@ function makeBuilder<Args extends StepContext, Ctx extends StepContext>(
         steps: state.steps,
         middleware: state.middleware.length > 0 ? state.middleware : undefined,
         argsSchema: state.argsSchema as ParserSchema<Args> | undefined,
+        strict: state.strict || undefined,
       }) as Pipeline<Args, Ctx>,
   });
 }
@@ -122,22 +124,74 @@ function makeBuilder<Args extends StepContext, Ctx extends StepContext>(
  *   .build();
  * ```
  *
+ * **Strict mode** (no schema):
+ * ```ts
+ * createPipeline('placeOrder', { strict: true })
+ * ```
+ *
+ * **Schema + strict mode:**
+ * ```ts
+ * createPipeline('placeOrder', z.object({ orderId: z.string() }), { strict: true })
+ * ```
+ *
  * @typeParam Args - The pipeline's input type. Inferred from `argsSchema`
  *   if provided, otherwise specify via generic parameter.
  * @param name - Pipeline name, used in metadata and error messages.
- * @param argsSchema - Optional schema that validates pipeline input
- *   at runtime. When provided, `Args` is inferred from the schema.
+ * @param schemaOrOptions - A schema for runtime args validation, or a
+ *   {@link PipelineOptions} object.
+ * @param options - When the second argument is a schema, pass options here.
  * @returns A frozen {@link PipelineBuilder} ready for `.step()`,
  *   `.use()`, and `.build()`.
  */
+export type PipelineOptions = {
+  strict?: boolean;
+};
+
+// Overload: name only
+export function createPipeline<Args extends StepContext>(name: string): PipelineBuilder<Args, Args>;
+
+// Overload: name + schema
 export function createPipeline<Args extends StepContext>(
   name: string,
-  argsSchema?: ParserSchema<Args>,
+  argsSchema: ParserSchema<Args>,
+): PipelineBuilder<Args, Args>;
+
+// Overload: name + options (no schema)
+export function createPipeline<Args extends StepContext>(
+  name: string,
+  options: PipelineOptions,
+): PipelineBuilder<Args, Args>;
+
+// Overload: name + schema + options
+export function createPipeline<Args extends StepContext>(
+  name: string,
+  argsSchema: ParserSchema<Args>,
+  options: PipelineOptions,
+): PipelineBuilder<Args, Args>;
+
+// Implementation
+export function createPipeline<Args extends StepContext>(
+  name: string,
+  schemaOrOptions?: ParserSchema<Args> | PipelineOptions,
+  options?: PipelineOptions,
 ): PipelineBuilder<Args, Args> {
+  let argsSchema: ParserSchema<Args> | undefined;
+  let strict = false;
+
+  if (schemaOrOptions != null) {
+    if ('safeParse' in schemaOrOptions) {
+      argsSchema = schemaOrOptions;
+      strict = options?.strict ?? false;
+    } else {
+      strict = schemaOrOptions.strict ?? false;
+    }
+  }
+
   return makeBuilder<Args, Args>({
     name,
     steps: [],
     middleware: [],
     argsSchema,
+    strict,
   });
 }

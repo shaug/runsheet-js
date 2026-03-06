@@ -162,4 +162,33 @@ describe('createPipeline (builder)', () => {
     const builder = createPipeline('test');
     expect(Object.isFrozen(builder)).toBe(true);
   });
+
+  describe('strict mode', () => {
+    it('throws at build time when steps have overlapping provides keys', () => {
+      const first = defineStep({
+        name: 'first',
+        provides: z.object({ key: z.string() }),
+        run: async () => ({ key: 'a' }),
+      });
+
+      const second = defineStep({
+        name: 'second',
+        provides: z.object({ key: z.string() }),
+        run: async () => ({ key: 'b' }),
+      });
+
+      expect(() =>
+        createPipeline('test', { strict: true }).step(first).step(second).build(),
+      ).toThrow(RunsheetError);
+    });
+
+    it('works with argsSchema and strict together', () => {
+      expect(() =>
+        createPipeline('test', z.object({ x: z.string() }), { strict: true })
+          .step(addA)
+          .step(addB)
+          .build(),
+      ).not.toThrow();
+    });
+  });
 });

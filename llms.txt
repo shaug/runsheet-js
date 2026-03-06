@@ -147,6 +147,17 @@ const pipeline = buildPipeline({
 });
 ```
 
+Use `strict: true` to detect provides key collisions at build time. Throws a
+RunsheetError with code 'STRICT_OVERLAP' if two steps provide the same key:
+
+```typescript
+const pipeline = buildPipeline({
+  name: 'checkout',
+  steps: [fetchUser, chargePayment],
+  strict: true,
+});
+```
+
 ### createPipeline (builder API)
 
 Fluent builder with progressive type narrowing.
@@ -166,6 +177,21 @@ Type-only args (no runtime validation of pipeline input):
 ```typescript
 const pipeline = createPipeline<{ userId: string }>('checkout')
   .step(fetchUser)
+  .build();
+```
+
+Strict mode via the builder:
+
+```typescript
+createPipeline('checkout', { strict: true })
+  .step(fetchUser)
+  .step(chargePayment)
+  .build();
+
+// Or with a schema:
+createPipeline('checkout', z.object({ userId: z.string() }), { strict: true })
+  .step(fetchUser)
+  .step(chargePayment)
   .build();
 ```
 
@@ -254,6 +280,7 @@ RunsheetError instances with a discriminated `code` property:
 - PREDICATE — when() predicate threw
 - TIMEOUT — step exceeded its timeout
 - RETRY_EXHAUSTED — step failed after all retry attempts
+- STRICT_OVERLAP — two steps provide the same key (strict mode, build time)
 
 Application errors (thrown from step run functions) pass through as-is.
 
@@ -278,7 +305,7 @@ Failure
    still execute. All rollback errors are collected.
 
 4. Last writer wins for context keys. If two steps both provide `status`, the
-   later step's value is used.
+   later step's value is used. Use `strict: true` to detect this at build time.
 
 5. Schemas are optional. Use Zod schemas for runtime validation at step
    boundaries, or use TypeScript generics alone for compile-time safety.

@@ -350,6 +350,69 @@ describe('buildPipeline', () => {
     });
   });
 
+  describe('strict mode', () => {
+    it('throws when two steps provide the same key', () => {
+      const first = defineStep({
+        name: 'first',
+        provides: z.object({ status: z.string() }),
+        run: async () => ({ status: 'pending' }),
+      });
+
+      const second = defineStep({
+        name: 'second',
+        provides: z.object({ status: z.string() }),
+        run: async () => ({ status: 'done' }),
+      });
+
+      expect(() => buildPipeline({ name: 'test', steps: [first, second], strict: true })).toThrow(
+        RunsheetError,
+      );
+
+      try {
+        buildPipeline({ name: 'test', steps: [first, second], strict: true });
+      } catch (err) {
+        expect(err).toBeInstanceOf(RunsheetError);
+        expect((err as RunsheetError).code).toBe('STRICT_OVERLAP');
+        expect((err as RunsheetError).message).toContain('status');
+        expect((err as RunsheetError).message).toContain('first');
+        expect((err as RunsheetError).message).toContain('second');
+      }
+    });
+
+    it('does not throw when keys are disjoint', () => {
+      expect(() =>
+        buildPipeline({ name: 'test', steps: [stepA, stepB, stepC], strict: true }),
+      ).not.toThrow();
+    });
+
+    it('skips steps without provides schemas', () => {
+      const noProvides = defineStep({
+        name: 'noProvides',
+        run: async () => ({ x: 1 }),
+      });
+
+      expect(() =>
+        buildPipeline({ name: 'test', steps: [stepA, noProvides], strict: true }),
+      ).not.toThrow();
+    });
+
+    it('allows overlap when strict is not set', () => {
+      const first = defineStep({
+        name: 'first',
+        provides: z.object({ status: z.string() }),
+        run: async () => ({ status: 'pending' }),
+      });
+
+      const second = defineStep({
+        name: 'second',
+        provides: z.object({ status: z.string() }),
+        run: async () => ({ status: 'done' }),
+      });
+
+      expect(() => buildPipeline({ name: 'test', steps: [first, second] })).not.toThrow();
+    });
+  });
+
   describe('pipeline object', () => {
     it('is frozen', () => {
       const pipeline = buildPipeline({
