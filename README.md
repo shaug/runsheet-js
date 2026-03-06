@@ -407,6 +407,38 @@ context (`{ ...ctx, ...item }`) so the step sees both pipeline-level and
 per-item values. On partial failure, succeeded items are rolled back (step form
 only).
 
+### Filter (collection filtering)
+
+```typescript
+import { filter, map } from 'runsheet';
+
+const pipeline = buildPipeline({
+  name: 'notify',
+  steps: [
+    filter(
+      'eligible',
+      (ctx) => ctx.users,
+      (user) => user.optedIn,
+    ),
+    map('emails', (ctx) => ctx.eligible, sendEmail),
+  ],
+});
+
+// Async predicate
+filter(
+  'valid',
+  (ctx) => ctx.orders,
+  async (order) => {
+    const inventory = await checkInventory(order.sku);
+    return inventory.available >= order.quantity;
+  },
+);
+```
+
+Predicates run concurrently via `Promise.allSettled`. Original order is
+preserved. If any predicate throws, the step fails. No rollback (filtering is a
+pure operation).
+
 ## Rollback
 
 When a step fails, rollback handlers for all previously completed steps execute
@@ -534,6 +566,12 @@ Iterate over a collection and run a function or step per item, concurrently.
 Results are collected into `{ [key]: Result[] }`. Accepts a plain function
 `(item, ctx) => result` or a `TypedStep` (items must be objects, spread into
 context). Step form supports per-item rollback on partial and external failure.
+
+### `filter(key, collection, predicate)`
+
+Filter a collection from context using a sync or async predicate. Predicates run
+concurrently. Items where the predicate returns `true` are kept; original order
+is preserved. Results are collected into `{ [key]: Item[] }`. No rollback.
 
 ### `when(predicate, step)`
 

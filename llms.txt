@@ -275,6 +275,29 @@ under the given key. In step form, each item is spread into the pipeline context
 ({ ...ctx, ...item }) so the step sees both pipeline-level and per-item values.
 On partial failure, succeeded items are rolled back (step form only).
 
+### filter (collection filtering)
+
+```typescript
+import { filter, map } from 'runsheet';
+
+const pipeline = buildPipeline({
+  name: 'notify',
+  steps: [
+    filter(
+      'eligible',
+      (ctx) => ctx.users,
+      (user) => user.optedIn,
+    ),
+    map('emails', (ctx) => ctx.eligible, sendEmail),
+  ],
+});
+```
+
+Predicates run concurrently via Promise.allSettled. Supports sync or async
+predicates. Items where the predicate returns true are kept; original order is
+preserved. If any predicate throws, the step fails. No rollback (pure
+operation).
+
 ### Dependency injection
 
 Pass dependencies as pipeline args — they're available to every step through the
@@ -394,11 +417,13 @@ Application errors (thrown from step run functions) pass through as-is.
 ## Key exports
 
 Functions: defineStep, buildPipeline, createPipeline, when, parallel, choice,
-map Classes: RunsheetError Types: Step, TypedStep, StepConfig, RetryPolicy,
-Pipeline, PipelineBuilder, PipelineResult, PipelineSuccess, PipelineFailure,
-PipelineExecutionMeta, RollbackReport, RollbackFailure, StepMiddleware,
-StepInfo, StepExecutor, ConditionalStep, RunsheetErrorCode, Result, Success,
-Failure
+map, filter Classes: RunsheetError, RequiresValidationError,
+ProvidesValidationError, ArgsValidationError, PredicateError, TimeoutError,
+RetryExhaustedError, StrictOverlapError, ChoiceNoMatchError, RollbackError
+Types: Step, TypedStep, StepConfig, RetryPolicy, Pipeline, PipelineBuilder,
+PipelineResult, PipelineSuccess, PipelineFailure, PipelineExecutionMeta,
+RollbackReport, RollbackFailure, StepMiddleware, StepInfo, StepExecutor,
+ConditionalStep, RunsheetErrorCode, Result, Success, Failure
 
 ## Important patterns
 
