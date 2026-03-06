@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.6.0](https://github.com/shaug/runsheet-js/compare/v0.5.0...v0.6.0) (2026-03-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* map(), filter(), and flatMap() now accept an optional Ctx type parameter. Existing code without explicit type arguments is unaffected (defaults to StepContext).
+* createPipeline has been removed. Use pipeline({ name }) to get a builder.
+* createPipeline() is deprecated. Use pipeline({ name }) instead of createPipeline(name).
+* RollbackError constructor now accepts an optional second parameter (causes array). Pipeline rollback handler signature changed from () => void to (ctx, output) => void.
+* AggregateMeta no longer includes stepsSkipped.
+* buildPipeline renamed to pipeline. PipelineResult, PipelineMeta, PipelineSuccess, PipelineFailure, TypedPipeline renamed to AggregateResult, AggregateMeta, AggregateSuccess, AggregateFailure, AggregateStep.
+* StepMeta no longer has stepsExecuted/stepsSkipped. buildPipeline() returns TypedPipeline instead of TypedStep. StepResult replaces the previous Result type from composable-functions.
+
+### Features
+
+* remove createPipeline, use pipeline({ name }) instead ([2ed0be1](https://github.com/shaug/runsheet-js/commit/2ed0be1e7812179d5d9d01483d1bb08c57b7c5e6))
+* rename to AggregateResult/AggregateStep, buildPipeline to pipeline ([89f93e4](https://github.com/shaug/runsheet-js/commit/89f93e4fa45477b26cf72f52744b8a42d2a9ef20))
+* typecheck test files, fix type errors, remove stepsSkipped ([b609879](https://github.com/shaug/runsheet-js/commit/b6098790884823f238e2e726a412eea8e17c4f32))
+* unify execution model, add PipelineResult and TypedPipeline ([df62975](https://github.com/shaug/runsheet-js/commit/df629753107b2a360be0f5225984c6b7e3d7a4a5))
+* unify pipeline() to return builder when steps is omitted ([0205d2a](https://github.com/shaug/runsheet-js/commit/0205d2aab6ef55815bd998272ece0d88fdb53594))
+
+
+### Bug Fixes
+
+* address principal review findings ([b70b7aa](https://github.com/shaug/runsheet-js/commit/b70b7aadd858edf899a5b8031fe7447cc60715b4))
+* pipeline reentrancy, parallel rollback scope, and review findings ([32e2c3a](https://github.com/shaug/runsheet-js/commit/32e2c3a880ac2da10bb75e6b1c1cb71fffc47ba8))
+
+
+### Miscellaneous Chores
+
+* target 0.6.0 for next release ([9f9bb73](https://github.com/shaug/runsheet-js/commit/9f9bb73256908273f05618d62b6d1e081d782d23))
+
 ## [0.5.0](https://github.com/shaug/runsheet-js/compare/v0.4.0...v0.5.0) (2026-03-06)
 
 
