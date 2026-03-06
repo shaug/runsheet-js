@@ -6,10 +6,9 @@ import type {
   TypedStep,
   UnionToIntersection,
 } from './types.js';
+import type { AsContext } from './internal.js';
+import { validateInnerSchema } from './internal.js';
 import { RunsheetError } from './errors.js';
-
-/** Ensure a type satisfies StepContext, falling back to StepContext. */
-type AsContext<T> = T extends StepContext ? T : StepContext;
 
 /** A [predicate, step] tuple used by {@link choice}. */
 type BranchTuple = readonly [(ctx: Readonly<StepContext>) => boolean, TypedStep];
@@ -27,24 +26,6 @@ type BranchProvides<T> = T extends readonly [unknown, infer S extends Step]
   : T extends Step
     ? ExtractProvides<T>
     : StepContext;
-
-// ---------------------------------------------------------------------------
-// Schema validation (mirrors parallel.ts)
-// ---------------------------------------------------------------------------
-
-function validateInnerSchema(
-  schema: Step['requires'] | Step['provides'],
-  data: unknown,
-  label: string,
-  code: 'REQUIRES_VALIDATION' | 'PROVIDES_VALIDATION',
-): RunsheetError[] | null {
-  if (!schema) return null;
-  const parsed = schema.safeParse(data);
-  if (parsed.success) return null;
-  return parsed.error.issues.map(
-    (issue) => new RunsheetError(code, `${label}: ${issue.path.join('.')}: ${issue.message}`),
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Normalize args: convert trailing bare step into a [() => true, step] tuple

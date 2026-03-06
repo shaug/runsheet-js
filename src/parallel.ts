@@ -7,9 +7,8 @@ import type {
   TypedStep,
   UnionToIntersection,
 } from './types.js';
-
-/** Ensure a type satisfies StepContext, falling back to StepContext. */
-type AsContext<T> = T extends StepContext ? T : StepContext;
+import type { AsContext } from './internal.js';
+import { validateInnerSchema } from './internal.js';
 import { RunsheetError } from './errors.js';
 import { isConditionalStep } from './when.js';
 
@@ -23,24 +22,6 @@ type InnerResult = {
   output?: StepOutput;
   errors?: Error[];
 };
-
-// ---------------------------------------------------------------------------
-// Schema validation (mirrors pipeline.ts — kept local to avoid coupling)
-// ---------------------------------------------------------------------------
-
-function validateInnerSchema(
-  schema: Step['requires'] | Step['provides'],
-  data: unknown,
-  label: string,
-  code: 'REQUIRES_VALIDATION' | 'PROVIDES_VALIDATION',
-): RunsheetError[] | null {
-  if (!schema) return null;
-  const parsed = schema.safeParse(data);
-  if (parsed.success) return null;
-  return parsed.error.issues.map(
-    (issue) => new RunsheetError(code, `${label}: ${issue.path.join('.')}: ${issue.message}`),
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Execute a single inner step

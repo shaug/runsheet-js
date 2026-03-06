@@ -1,23 +1,6 @@
 import type { ExtractProvides, Step, StepContext, StepOutput, TypedStep } from './types.js';
+import { validateInnerSchema } from './internal.js';
 import { RunsheetError } from './errors.js';
-
-// ---------------------------------------------------------------------------
-// Schema validation (mirrors parallel.ts / choice.ts)
-// ---------------------------------------------------------------------------
-
-function validateInnerSchema(
-  schema: Step['requires'] | Step['provides'],
-  data: unknown,
-  label: string,
-  code: 'REQUIRES_VALIDATION' | 'PROVIDES_VALIDATION',
-): RunsheetError[] | null {
-  if (!schema) return null;
-  const parsed = schema.safeParse(data);
-  if (parsed.success) return null;
-  return parsed.error.issues.map(
-    (issue) => new RunsheetError(code, `${label}: ${issue.path.join('.')}: ${issue.message}`),
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Runtime step detection
