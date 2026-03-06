@@ -19,7 +19,7 @@ export type ConditionalStep = Step & {
  * skipped:
  * - No context snapshot is taken.
  * - No rollback entry is created.
- * - The step name is recorded in the pipeline's `meta.stepsSkipped`.
+ * - The step name is not recorded in the pipeline's `meta.stepsExecuted`.
  *
  * @param predicate - Guard function. Return `true` to execute, `false` to skip.
  * @param step - The step to conditionally execute.

@@ -151,7 +151,7 @@ context = freeze(initialArgs)
 
 for each step in steps:
   if step is conditional and predicate(context) is false:
-    skip (record in stepsSkipped)
+    skip
   snapshot pre-step context
   result = await step.run(context)  // validation happens inside
   if result is failure:

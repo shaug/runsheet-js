@@ -40,15 +40,14 @@ export function baseMeta(name: string, args: Readonly<StepContext>): StepMeta {
  * Create an {@link AggregateMeta} for an orchestrator execution.
  *
  * Used by `pipeline`, `parallel`, and `choice` to produce results
- * with orchestration detail (which steps ran and which were skipped).
+ * with orchestration detail (which steps ran).
  */
 export function aggregateMeta(
   name: string,
   args: Readonly<StepContext>,
   stepsExecuted: readonly string[],
-  stepsSkipped: readonly string[],
 ): AggregateMeta {
-  return Object.freeze({ name, args, stepsExecuted, stepsSkipped });
+  return Object.freeze({ name, args, stepsExecuted });
 }
 
 /**

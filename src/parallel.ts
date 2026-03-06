@@ -6,7 +6,6 @@ import type {
   Step,
   StepContext,
   StepOutput,
-  TypedStep,
   UnionToIntersection,
 } from './types.js';
 import type { AsContext } from './internal.js';
@@ -61,7 +60,7 @@ async function executeInner(step: Step, ctx: Readonly<StepContext>): Promise<Inn
  * propagates.
  *
  * Returns an {@link AggregateStep} with orchestration metadata
- * tracking which inner steps executed and which were skipped.
+ * tracking which inner steps executed.
  *
  * Inner steps retain their own `requires`/`provides` validation,
  * `retry`, and `timeout` behavior. Conditional steps (via `when()`)
@@ -84,7 +83,7 @@ async function executeInner(step: Step, ctx: Readonly<StepContext>): Promise<Inn
  *   intersection of all inner steps' requires, and `Provides` is the
  *   intersection of all inner steps' provides.
  */
-export function parallel<S extends readonly TypedStep[]>(
+export function parallel<S extends readonly Step[]>(
   ...steps: [...S]
 ): AggregateStep<
   AsContext<UnionToIntersection<ExtractRequires<S[number]>>>,
@@ -104,17 +103,13 @@ export function parallel<S extends readonly TypedStep[]>(
     const succeeded: { step: Step; output: StepOutput }[] = [];
     const allErrors: Error[] = [];
     const executed: string[] = [];
-    const skipped: string[] = [];
 
     for (const s of settled) {
       if (s.status === 'rejected') {
         allErrors.push(toError(s.reason));
       } else {
         const r = s.value;
-        if (r.skipped) {
-          skipped.push(r.step.name);
-          continue;
-        }
+        if (r.skipped) continue;
         if (r.output) {
           succeeded.push({ step: r.step, output: r.output });
           executed.push(r.step.name);
@@ -142,7 +137,7 @@ export function parallel<S extends readonly TypedStep[]>(
         allErrors.length === 1
           ? allErrors[0]
           : new AggregateError(allErrors, `${name}: ${allErrors.length} step(s) failed`);
-      const meta = aggregateMeta(name, frozenCtx, executed, skipped);
+      const meta = aggregateMeta(name, frozenCtx, executed);
       return aggregateFailure(error, meta, name);
     }
 
@@ -152,7 +147,7 @@ export function parallel<S extends readonly TypedStep[]>(
       Object.assign(merged, output);
     }
 
-    const meta = aggregateMeta(name, frozenCtx, executed, skipped);
+    const meta = aggregateMeta(name, frozenCtx, executed);
     return aggregateSuccess(merged, meta);
   };
 

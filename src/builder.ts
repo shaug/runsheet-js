@@ -1,4 +1,11 @@
-import type { AggregateStep, Step, StepContext, StepSchema, TypedStep } from './types.js';
+import type {
+  AggregateStep,
+  ExtractProvides,
+  ExtractRequires,
+  Step,
+  StepContext,
+  StepSchema,
+} from './types.js';
 import type { StepMiddleware } from './middleware.js';
 import { pipeline } from './pipeline.js';
 
@@ -27,16 +34,18 @@ export type PipelineBuilder<Args extends StepContext, Ctx extends StepContext> =
   /**
    * Add a step to the pipeline.
    *
-   * The step's `Requires` type must be satisfied by the current `Ctx`.
-   * The returned builder's `Ctx` expands to include the step's `Provides`.
+   * The step's `Requires` type must be satisfied by the current `Ctx`
+   * (checked via phantom brands — a step that requires less than `Ctx`
+   * is always accepted). The returned builder's `Ctx` expands to
+   * include the step's `Provides`.
    *
-   * @typeParam Provides - The output type of the step being added.
-   * @param step - A {@link TypedStep} (from `defineStep`, `when`, `pipeline`, etc.).
+   * @typeParam S - The step type being added.
+   * @param step - A {@link Step} (from `defineStep`, `when`, `pipeline`, etc.).
    * @returns A new builder with the expanded context type.
    */
-  readonly step: <Provides extends StepContext>(
-    step: TypedStep<Ctx, Provides>,
-  ) => PipelineBuilder<Args, Ctx & Provides>;
+  readonly step: <S extends Step>(
+    step: S & ([Ctx] extends [ExtractRequires<S>] ? unknown : never),
+  ) => PipelineBuilder<Args, Ctx & ExtractProvides<S>>;
 
   /**
    * Add middleware to the pipeline.
@@ -72,8 +81,8 @@ function makeBuilder<Args extends StepContext, Ctx extends StepContext>(
   state: BuilderState,
 ): PipelineBuilder<Args, Ctx> {
   return Object.freeze({
-    step: <Provides extends StepContext>(step: TypedStep<Ctx, Provides>) =>
-      makeBuilder<Args, Ctx & Provides>({
+    step: <S extends Step>(step: S) =>
+      makeBuilder<Args, Ctx & ExtractProvides<S>>({
         ...state,
         steps: [...state.steps, step],
       }),

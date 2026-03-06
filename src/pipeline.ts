@@ -89,7 +89,6 @@ type ExecutionState = {
   context: StepContext;
   readonly executed: ExecutedStepEntry[];
   readonly stepsExecuted: string[];
-  readonly stepsSkipped: string[];
 };
 
 function createExecutionState(args: StepContext): ExecutionState {
@@ -97,7 +96,6 @@ function createExecutionState(args: StepContext): ExecutionState {
     context: Object.freeze({ ...args }),
     executed: [],
     stepsExecuted: [],
-    stepsSkipped: [],
   };
 }
 
@@ -162,7 +160,7 @@ async function executePipeline(
     if (!parsed.success) {
       const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ');
       const error = new ArgsValidationError(`${config.name} args: ${issues}`);
-      const meta = aggregateMeta(config.name, frozenArgs, [], []);
+      const meta = aggregateMeta(config.name, frozenArgs, []);
       const state = createExecutionState(frozenArgs);
       return { result: aggregateFailure(error, meta, config.name), state };
     }
@@ -175,7 +173,6 @@ async function executePipeline(
     // Evaluate conditional predicate
     try {
       if (isConditionalStep(step) && !step.predicate(state.context)) {
-        state.stepsSkipped.push(step.name);
         continue;
       }
     } catch (err) {
@@ -183,12 +180,7 @@ async function executePipeline(
       const error = new PredicateError(`${step.name} predicate: ${cause.message}`);
       error.cause = cause;
       const rollback = await executeRollback(state.executed);
-      const meta = aggregateMeta(
-        config.name,
-        frozenArgs,
-        [...state.stepsExecuted],
-        [...state.stepsSkipped],
-      );
+      const meta = aggregateMeta(config.name, frozenArgs, [...state.stepsExecuted]);
       return { result: aggregateFailure(error, meta, step.name, rollback), state };
     }
 
@@ -212,23 +204,13 @@ async function executePipeline(
     } catch (err) {
       const error = toError(err);
       const rollback = await executeRollback(state.executed);
-      const meta = aggregateMeta(
-        config.name,
-        frozenArgs,
-        [...state.stepsExecuted],
-        [...state.stepsSkipped],
-      );
+      const meta = aggregateMeta(config.name, frozenArgs, [...state.stepsExecuted]);
       return { result: aggregateFailure(error, meta, step.name, rollback), state };
     }
 
     if (!result.success) {
       const rollback = await executeRollback(state.executed);
-      const meta = aggregateMeta(
-        config.name,
-        frozenArgs,
-        [...state.stepsExecuted],
-        [...state.stepsSkipped],
-      );
+      const meta = aggregateMeta(config.name, frozenArgs, [...state.stepsExecuted]);
       return { result: aggregateFailure(result.error, meta, step.name, rollback), state };
     }
 
@@ -239,12 +221,7 @@ async function executePipeline(
     state.context = Object.freeze({ ...state.context, ...output });
   }
 
-  const meta = aggregateMeta(
-    config.name,
-    frozenArgs,
-    [...state.stepsExecuted],
-    [...state.stepsSkipped],
-  );
+  const meta = aggregateMeta(config.name, frozenArgs, [...state.stepsExecuted]);
   return { result: aggregateSuccess(state.context, meta), state };
 }
 
@@ -261,7 +238,7 @@ async function executePipeline(
  *
  * The `run()` method returns an {@link AggregateResult} which extends
  * {@link StepResult} with orchestration metadata (`stepsExecuted`,
- * `stepsSkipped`).
+ * `stepsExecuted`).
  *
  * @example
  * ```ts

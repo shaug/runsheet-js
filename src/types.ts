@@ -95,6 +95,10 @@ export type Step = {
  * Phantom type brands for compile-time tracking of step I/O types.
  * These symbols never exist at runtime — they only guide TypeScript's
  * type checker through the builder's progressive type narrowing.
+ *
+ * `RequiresBrand` uses a function type for contravariance: a step that
+ * requires `StepContext` (anything) is usable where a narrower context
+ * is available. `ProvidesBrand` is covariant (a plain value brand).
  */
 declare const RequiresBrand: unique symbol;
 declare const ProvidesBrand: unique symbol;
@@ -109,6 +113,10 @@ declare const ProvidesBrand: unique symbol;
  * and `provides` properties all carry concrete types matching the step's
  * schemas or generics. When assigned to `Step` (e.g., in a pipeline's
  * step array), the intersection collapses to the erased signatures.
+ *
+ * The typed properties appear BEFORE the `Step` intersection so that
+ * TypeScript's overload resolution picks the concrete signatures first
+ * when calling `run()` directly on a `TypedStep`.
  *
  * @typeParam Requires - The context shape this step reads from.
  * @typeParam Provides - The output shape this step produces.
@@ -128,8 +136,8 @@ declare const ProvidesBrand: unique symbol;
 export type TypedStep<
   Requires extends StepContext = StepContext,
   Provides extends StepContext = StepContext,
-> = Step & {
-  readonly [RequiresBrand]: Requires;
+> = {
+  readonly [RequiresBrand]: (ctx: Requires) => void;
   readonly [ProvidesBrand]: Provides;
   /** Optional schema that validates the accumulated context before `run`. */
   readonly requires: StepSchema<Requires> | undefined;
@@ -146,7 +154,7 @@ export type TypedStep<
   readonly rollback:
     | ((ctx: Readonly<Requires>, output: Readonly<Provides>) => Promise<void>)
     | undefined;
-};
+} & Step;
 
 // ---------------------------------------------------------------------------
 // Type-level utilities (used by pipeline/builder for type accumulation)
@@ -159,13 +167,30 @@ export type UnionToIntersection<U> = [U] extends [never]
     ? I
     : never;
 
-/** Extract the Requires type from a step. Returns `StepContext` for untyped (erased) steps. */
-export type ExtractRequires<T extends Step> =
-  T extends TypedStep<infer R, StepContext> ? R : StepContext;
+/**
+ * Extract the Requires type from a step via its phantom brand.
+ * Returns `StepContext` for untyped (erased) steps.
+ *
+ * Matches the contravariant function brand directly — avoids full
+ * structural matching on `TypedStep` which would fail due to
+ * `run` parameter contravariance in conditional types.
+ */
+export type ExtractRequires<T extends Step> = T extends {
+  readonly [RequiresBrand]: (ctx: infer R) => void;
+}
+  ? R
+  : StepContext;
 
-/** Extract the Provides type from a step. Returns `object` for untyped (erased) steps. */
-export type ExtractProvides<T extends Step> =
-  T extends TypedStep<StepContext, infer P> ? P : object;
+/**
+ * Extract the Provides type from a step via its phantom brand.
+ * Returns `object` for untyped (erased) steps.
+ *
+ * Matches the covariant value brand directly — avoids full structural
+ * matching which would fail for steps with non-trivial Requires types.
+ */
+export type ExtractProvides<T extends Step> = T extends { readonly [ProvidesBrand]: infer P }
+  ? P
+  : object;
 
 /**
  * Retry policy for a step's `run` function.
@@ -307,15 +332,13 @@ export type StepMeta = {
  * Extended metadata for orchestrator results (pipelines, parallel,
  * choice).
  *
- * Includes orchestration detail — which steps ran and which were
- * skipped — on top of the base {@link StepMeta}. Present on results
- * from `pipeline()`, `parallel()`, and `choice()`.
+ * Includes orchestration detail — which steps ran — on top of the
+ * base {@link StepMeta}. Present on results from `pipeline()`,
+ * `parallel()`, and `choice()`.
  */
 export type AggregateMeta = StepMeta & {
   /** Names of steps that executed successfully, in order. */
   readonly stepsExecuted: readonly string[];
-  /** Names of conditional steps that were skipped (predicate returned false). */
-  readonly stepsSkipped: readonly string[];
 };
 
 /**
@@ -425,7 +448,7 @@ export type AggregateFailure = {
  * if (result.success) {
  *   result.meta.stepsExecuted; // string[] — which steps ran
  * } else {
- *   result.meta.stepsSkipped;  // string[] — which were skipped
+ *   result.meta.stepsExecuted; // string[] — which steps ran
  *   result.failedStep;         // which step failed
  *   result.rollback;           // { completed, failed }
  * }
@@ -442,13 +465,14 @@ export type AggregateResult<T> = AggregateSuccess<T> | AggregateFailure;
 /**
  * A step that orchestrates other steps and returns rich results.
  *
- * Extends {@link TypedStep} but narrows `run()` to return
+ * Extends {@link TypedStep} with a narrower `run()` that returns
  * {@link AggregateResult} instead of {@link StepResult}. This is the
  * type returned by `pipeline()`, `parallel()`, and `choice()`.
  *
- * Since `AggregateResult<T>` is assignable to `StepResult<T>`, an
- * `AggregateStep` can be used anywhere a `TypedStep` is expected
- * (e.g., in another pipeline's step array).
+ * The `run` property uses an explicit overloaded function type:
+ * the first overload returns `AggregateResult` (matched when calling
+ * directly), the second preserves the erased `Step.run` signature
+ * (for `Step` assignability when used in pipeline arrays).
  *
  * @typeParam Requires - The input type.
  * @typeParam Provides - The accumulated output type.
@@ -456,7 +480,7 @@ export type AggregateResult<T> = AggregateSuccess<T> | AggregateFailure;
 export type AggregateStep<
   Requires extends StepContext = StepContext,
   Provides extends StepContext = StepContext,
-> = Omit<TypedStep<Requires, Provides>, 'run'> & {
+> = {
   /** Execute the orchestrator and return an {@link AggregateResult}. */
   readonly run: (ctx: Readonly<Requires>) => Promise<AggregateResult<Provides>>;
-};
+} & TypedStep<Requires, Provides>;

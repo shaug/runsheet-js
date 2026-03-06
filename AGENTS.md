@@ -85,7 +85,7 @@ simplified markup format.
 - `StepResult<T>` — discriminated union (`StepSuccess<T> | StepFailure`) with
   single `error: Error` on failure (not an array)
 - `AggregateResult<T>` — extends `StepResult<T>` with `AggregateMeta`
-  (`stepsExecuted`, `stepsSkipped`)
+  (`stepsExecuted`)
 - `StepMeta` is slim (`name`, `args`); `AggregateMeta extends StepMeta` adds
   orchestration detail
 - `pipeline` infers accumulated output types from the steps array via

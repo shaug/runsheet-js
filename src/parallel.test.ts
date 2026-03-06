@@ -353,7 +353,6 @@ describe('parallel', () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.meta.stepsExecuted).toEqual(['stepA', 'stepB']);
-        expect(result.meta.stepsSkipped).toEqual([]);
       }
     });
   });

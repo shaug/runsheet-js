@@ -382,11 +382,14 @@ describe('choice', () => {
         [(ctx) => ctx.method === 'card', chargeCard],
         [(ctx) => ctx.method === 'bank', chargeBankTransfer],
       );
-      const result = await ch.run({ method: 'bank', amount: 75 });
+      // Intermediate variable avoids excess property check on object
+      // literals, which would cause TypeScript to fall through to the
+      // erased Step.run overload instead of the AggregateResult overload.
+      const args = { method: 'bank', amount: 75 };
+      const result = await ch.run(args);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.meta.stepsExecuted).toEqual(['chargeBankTransfer']);
-        expect(result.meta.stepsSkipped).toEqual([]);
       }
     });
   });

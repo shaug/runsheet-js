@@ -417,7 +417,6 @@ Every run() returns a StepResult (never throws):
     name: 'checkout',
     args: { userId: '123' },
     stepsExecuted: ['fetchUser', 'chargePayment'],
-    stepsSkipped: [],
   },
 }
 
@@ -425,7 +424,7 @@ Every run() returns a StepResult (never throws):
 {
   success: false,
   error: Error,
-  meta: { name, args, stepsExecuted, stepsSkipped },
+  meta: { name, args, stepsExecuted },
   failedStep: 'chargePayment',
   rollback: { completed: ['fetchUser'], failed: [] },
 }

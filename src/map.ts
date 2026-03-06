@@ -70,7 +70,7 @@ export function map<K extends string, Item, Result>(
 ): TypedStep<StepContext, Record<K, Awaited<Result>[]>>;
 
 // Overload: step callback
-export function map<K extends string, S extends TypedStep>(
+export function map<K extends string, S extends Step>(
   key: K,
   collection: (ctx: Readonly<StepContext>) => StepContext[],
   step: S,

@@ -31,7 +31,6 @@ describe('when', () => {
     if (result.success) {
       expect(result.data).toEqual({ base: 10, doubled: 20 });
       expect(result.meta.stepsExecuted).toEqual(['always', 'conditional']);
-      expect(result.meta.stepsSkipped).toEqual([]);
     }
   });
 
@@ -56,7 +55,6 @@ describe('when', () => {
     if (result.success) {
       expect(result.data).toEqual({ base: 10 });
       expect(result.meta.stepsExecuted).toEqual(['always']);
-      expect(result.meta.stepsSkipped).toEqual(['conditional']);
     }
   });
 
@@ -145,7 +143,7 @@ describe('when', () => {
     expect(result.success).toBe(true);
     expect(executedSteps).toEqual(['a', 'c']);
     if (result.success) {
-      expect(result.meta.stepsSkipped).toEqual(['b']);
+      expect(result.meta.stepsExecuted).toEqual(['a', 'c']);
     }
   });
 

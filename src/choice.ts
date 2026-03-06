@@ -6,7 +6,6 @@ import type {
   Step,
   StepContext,
   StepOutput,
-  TypedStep,
   UnionToIntersection,
 } from './types.js';
 import type { AsContext } from './internal.js';
@@ -14,7 +13,7 @@ import { toError, aggregateMeta, aggregateSuccess, aggregateFailure } from './in
 import { ChoiceNoMatchError, PredicateError, RollbackError } from './errors.js';
 
 /** A [predicate, step] tuple used by {@link choice}. */
-type BranchTuple = readonly [(ctx: Readonly<StepContext>) => boolean, TypedStep];
+type BranchTuple = readonly [(ctx: Readonly<StepContext>) => boolean, Step];
 
 /** Extract the Requires type from a branch tuple's step. */
 type BranchRequires<T> = T extends readonly [unknown, infer S extends Step]
@@ -36,11 +35,9 @@ type BranchProvides<T> = T extends readonly [unknown, infer S extends Step]
 
 type NormalizedBranch = readonly [(ctx: Readonly<StepContext>) => boolean, Step];
 
-function normalizeBranches(
-  args: readonly (BranchTuple | TypedStep)[],
-): readonly NormalizedBranch[] {
+function normalizeBranches(args: readonly (BranchTuple | Step)[]): readonly NormalizedBranch[] {
   return args.map((arg): NormalizedBranch => {
-    if (Array.isArray(arg)) return arg as unknown as NormalizedBranch;
+    if (Array.isArray(arg)) return arg as NormalizedBranch;
     // Bare step → default branch
     return [() => true, arg as Step];
   });
@@ -97,7 +94,7 @@ export function choice<B extends readonly BranchTuple[]>(
 >;
 
 // Overload: tuples + trailing bare step as default
-export function choice<B extends readonly BranchTuple[], D extends TypedStep>(
+export function choice<B extends readonly BranchTuple[], D extends Step>(
   ...args: [...B, D]
 ): AggregateStep<
   AsContext<UnionToIntersection<BranchRequires<B[number]> | ExtractRequires<D>>>,
@@ -105,9 +102,7 @@ export function choice<B extends readonly BranchTuple[], D extends TypedStep>(
 >;
 
 // Implementation
-export function choice(
-  ...args: (BranchTuple | TypedStep)[]
-): AggregateStep<StepContext, StepContext> {
+export function choice(...args: (BranchTuple | Step)[]): AggregateStep<StepContext, StepContext> {
   const innerBranches = normalizeBranches(args);
   const name = `choice(${innerBranches.map(([, step]) => step.name).join(', ')})`;
 
@@ -131,7 +126,7 @@ export function choice(
         const cause = toError(err);
         const error = new PredicateError(`${name} predicate: ${cause.message}`);
         error.cause = cause;
-        const meta = aggregateMeta(name, frozenCtx, [], []);
+        const meta = aggregateMeta(name, frozenCtx, []);
         return aggregateFailure(error, meta, name);
       }
 
@@ -139,19 +134,19 @@ export function choice(
 
       const result = await step.run(frozenCtx);
       if (!result.success) {
-        const meta = aggregateMeta(name, frozenCtx, [], []);
+        const meta = aggregateMeta(name, frozenCtx, []);
         return aggregateFailure(result.error, meta, name);
       }
 
       // Track which branch ran for rollback
       branchMap.set(result.data, i);
 
-      const meta = aggregateMeta(name, frozenCtx, [step.name], []);
+      const meta = aggregateMeta(name, frozenCtx, [step.name]);
       return aggregateSuccess(result.data, meta);
     }
 
     // No branch matched
-    const meta = aggregateMeta(name, frozenCtx, [], []);
+    const meta = aggregateMeta(name, frozenCtx, []);
     return aggregateFailure(new ChoiceNoMatchError(`${name}: no branch matched`), meta, name);
   };
 

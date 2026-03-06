@@ -165,7 +165,6 @@ describe('pipeline', () => {
       if (result.success) {
         expect(result.meta.name).toBe('myPipeline');
         expect(result.meta.stepsExecuted).toEqual(['stepA', 'stepB']);
-        expect(result.meta.stepsSkipped).toEqual([]);
       }
     });
 

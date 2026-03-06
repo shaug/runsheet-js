@@ -224,8 +224,8 @@ const placeOrder = pipeline({
 });
 ```
 
-Skipped steps produce no snapshot, no rollback entry. The pipeline result tracks
-which steps were skipped in `result.meta.stepsSkipped`.
+Skipped steps produce no snapshot, no rollback entry, and do not appear in
+`result.meta.stepsExecuted`.
 
 ### Middleware
 
@@ -530,7 +530,6 @@ Every `run()` returns a `StepResult` with execution metadata:
     name: 'placeOrder',
     args: { orderId: '123' },
     stepsExecuted: ['validateOrder', 'chargePayment', 'sendConfirmation'],
-    stepsSkipped: [],
   }
 }
 
@@ -538,7 +537,7 @@ Every `run()` returns a `StepResult` with execution metadata:
 {
   success: false,
   error: Error,
-  meta: { name, args, stepsExecuted, stepsSkipped },
+  meta: { name, args, stepsExecuted },
   failedStep: 'chargePayment',
   rollback: { completed: [...], failed: [...] },
 }
@@ -566,7 +565,7 @@ schemas or generics you provide.
 
 Build a pipeline from an array of steps. Returns an `AggregateStep` whose
 `run()` returns an `AggregateResult` — `data` is the intersection of all step
-output types, `meta` includes `stepsExecuted` and `stepsSkipped`.
+output types, `meta` includes `stepsExecuted`.
 
 | Option       | Type               | Description                                                       |
 | ------------ | ------------------ | ----------------------------------------------------------------- |

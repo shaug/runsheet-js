@@ -35,7 +35,7 @@
     "lint:fix": "./scripts/lint.sh --fix",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.check.json",
     "prepare": "husky",
     "prepublishOnly": "pnpm run build"
   },
