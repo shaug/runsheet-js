@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/shaug/runsheet-js/compare/v0.2.1...v0.3.0) (2026-03-06)
+
+
+### Features
+
+* add strict mode for provides key collision detection ([cd12eba](https://github.com/shaug/runsheet-js/commit/cd12eba2d4f632021fe1bef5b29152bbbbb643bb))
+
 ## [0.2.1](https://github.com/shaug/runsheet-js/compare/v0.2.0...v0.2.1) (2026-03-06)
 
 
