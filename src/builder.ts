@@ -7,7 +7,7 @@ import type {
   StepSchema,
 } from './types.js';
 import type { StepMiddleware } from './middleware.js';
-import { pipeline } from './pipeline.js';
+import { buildPipelineStep } from './pipeline.js';
 
 // ---------------------------------------------------------------------------
 // Builder types
@@ -22,7 +22,7 @@ import { pipeline } from './pipeline.js';
  * This means you can safely fork a builder to create variants:
  *
  * ```ts
- * const base = createPipeline('order').step(validate);
+ * const base = pipeline({ name: 'order' }).step(validate);
  * const withCharge = base.step(charge).build();
  * const withoutCharge = base.build(); // unaffected by the fork
  * ```
@@ -69,7 +69,8 @@ export type PipelineBuilder<Args extends StepContext, Ctx extends StepContext> =
 // Internal builder state (immutable — each method returns a new builder)
 // ---------------------------------------------------------------------------
 
-type BuilderState = {
+/** @internal */
+export type BuilderState = {
   readonly name: string;
   readonly steps: readonly Step[];
   readonly middleware: readonly StepMiddleware[];
@@ -77,7 +78,8 @@ type BuilderState = {
   readonly strict: boolean;
 };
 
-function makeBuilder<Args extends StepContext, Ctx extends StepContext>(
+/** @internal */
+export function makeBuilder<Args extends StepContext, Ctx extends StepContext>(
   state: BuilderState,
 ): PipelineBuilder<Args, Ctx> {
   return Object.freeze({
@@ -94,7 +96,7 @@ function makeBuilder<Args extends StepContext, Ctx extends StepContext>(
       }),
 
     build: () =>
-      pipeline({
+      buildPipelineStep({
         name: state.name,
         steps: state.steps,
         middleware: state.middleware.length > 0 ? state.middleware : undefined,
@@ -105,55 +107,15 @@ function makeBuilder<Args extends StepContext, Ctx extends StepContext>(
 }
 
 // ---------------------------------------------------------------------------
-// Public API
+// Deprecated API
 // ---------------------------------------------------------------------------
 
 /**
  * Start building a pipeline with the fluent builder API.
  *
- * The builder gives progressive type narrowing — each `.step()` call
- * extends the known context type, so TypeScript catches mismatches
- * at compile time.
- *
- * **Type-only args** (no runtime validation):
- * ```ts
- * createPipeline<{ orderId: string }>('placeOrder')
- *   .step(validateOrder)
- *   .step(chargePayment)
- *   .build();
- * ```
- *
- * **Schema args** (runtime validation + type inference):
- * ```ts
- * createPipeline('placeOrder', z.object({ orderId: z.string() }))
- *   .step(validateOrder)
- *   .step(chargePayment)
- *   .build();
- * ```
- *
- * **Strict mode** (no schema):
- * ```ts
- * createPipeline('placeOrder', { strict: true })
- * ```
- *
- * **Schema + strict mode:**
- * ```ts
- * createPipeline('placeOrder', z.object({ orderId: z.string() }), { strict: true })
- * ```
- *
- * @typeParam Args - The pipeline's input type. Inferred from
- *   `argsSchema` if provided, otherwise specify via generic parameter.
- * @param name - Pipeline name, used in metadata and error messages.
- * @param schemaOrOptions - A schema for runtime args validation, or
- *   a {@link PipelineOptions} object.
- * @param options - When the second argument is a schema, pass options
- *   here.
- * @returns A frozen {@link PipelineBuilder} ready for `.step()`,
- *   `.use()`, and `.build()`.
+ * @deprecated Use `pipeline({ name })` instead. `createPipeline`
+ * will be removed in a future major version.
  */
-export type PipelineOptions = {
-  strict?: boolean;
-};
 
 // Overload: name only
 export function createPipeline<Args extends StepContext>(name: string): PipelineBuilder<Args, Args>;
@@ -167,21 +129,21 @@ export function createPipeline<Args extends StepContext>(
 // Overload: name + options (no schema)
 export function createPipeline<Args extends StepContext>(
   name: string,
-  options: PipelineOptions,
+  options: { strict?: boolean },
 ): PipelineBuilder<Args, Args>;
 
 // Overload: name + schema + options
 export function createPipeline<Args extends StepContext>(
   name: string,
   argsSchema: StepSchema<Args>,
-  options: PipelineOptions,
+  options: { strict?: boolean },
 ): PipelineBuilder<Args, Args>;
 
 // Implementation
 export function createPipeline<Args extends StepContext>(
   name: string,
-  schemaOrOptions?: StepSchema<Args> | PipelineOptions,
-  options?: PipelineOptions,
+  schemaOrOptions?: StepSchema<Args> | { strict?: boolean },
+  options?: { strict?: boolean },
 ): PipelineBuilder<Args, Args> {
   let argsSchema: StepSchema<Args> | undefined;
   let strict = false;

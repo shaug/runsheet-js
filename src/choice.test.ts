@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, pipeline, createPipeline, choice, RunsheetError } from './index.js';
+import { defineStep, pipeline, choice, RunsheetError } from './index.js';
 
 describe('choice', () => {
   const chargeCard = defineStep({
@@ -123,7 +123,7 @@ describe('choice', () => {
     });
 
     it('works with the builder API', async () => {
-      const p = createPipeline<{ method: string; amount: number }>('test')
+      const p = pipeline<{ method: string; amount: number }>({ name: 'test' })
         .step(
           choice(
             [(ctx) => ctx.method === 'card', chargeCard],

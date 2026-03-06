@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, pipeline, createPipeline, filter, map } from './index.js';
+import { defineStep, pipeline, filter, map } from './index.js';
 
 describe('filter', () => {
   describe('sync predicate', () => {
@@ -267,7 +267,7 @@ describe('filter', () => {
     });
 
     it('works with the builder API', async () => {
-      const p = createPipeline<{ nums: number[] }>('test')
+      const p = pipeline<{ nums: number[] }>({ name: 'test' })
         .step(
           filter(
             'big',

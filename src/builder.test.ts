@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, createPipeline, when, RunsheetError } from './index.js';
+import { defineStep, pipeline, createPipeline, when, RunsheetError } from './index.js';
 import type { StepMiddleware } from './index.js';
 
-describe('createPipeline (builder)', () => {
+describe('pipeline (builder form)', () => {
   const addA = defineStep({
     name: 'addA',
     provides: z.object({ a: z.number() }),
@@ -18,7 +18,7 @@ describe('createPipeline (builder)', () => {
   });
 
   it('builds a working pipeline', async () => {
-    const p = createPipeline('test').step(addA).step(addB).build();
+    const p = pipeline({ name: 'test' }).step(addA).step(addB).build();
 
     const result = await p.run({});
     expect(result.success).toBe(true);
@@ -35,7 +35,7 @@ describe('createPipeline (builder)', () => {
       run: async (ctx) => ({ greeting: `Hi ${ctx.name}` }),
     });
 
-    const p = createPipeline<{ name: string }>('test').step(greet).build();
+    const p = pipeline<{ name: string }>({ name: 'test' }).step(greet).build();
 
     const result = await p.run({ name: 'Alice' });
     expect(result.success).toBe(true);
@@ -45,7 +45,10 @@ describe('createPipeline (builder)', () => {
   });
 
   it('validates args with schema', async () => {
-    const p = createPipeline('test', z.object({ name: z.string() }))
+    const p = pipeline({
+      name: 'test',
+      argsSchema: z.object({ name: z.string() }),
+    })
       .step(
         defineStep({
           name: 'greet',
@@ -78,14 +81,14 @@ describe('createPipeline (builder)', () => {
       return next(ctx);
     };
 
-    const p = createPipeline('test').use(logger).step(addA).step(addB).build();
+    const p = pipeline({ name: 'test' }).use(logger).step(addA).step(addB).build();
 
     await p.run({});
     expect(calls).toEqual(['addA', 'addB']);
   });
 
   it('builder is immutable — each method returns a new builder', () => {
-    const builder1 = createPipeline('test');
+    const builder1 = pipeline({ name: 'test' });
     const builder2 = builder1.step(addA);
     const builder3 = builder2.step(addB);
 
@@ -100,7 +103,7 @@ describe('createPipeline (builder)', () => {
   });
 
   it('builder state is isolated when forking', async () => {
-    const base = createPipeline('test').step(addA);
+    const base = pipeline({ name: 'test' }).step(addA);
 
     // Fork: one branch adds addB, the other doesn't
     const withB = base.step(addB).build();
@@ -129,7 +132,7 @@ describe('createPipeline (builder)', () => {
       }),
     );
 
-    const p = createPipeline('test').step(addA).step(conditional).build();
+    const p = pipeline({ name: 'test' }).step(addA).step(conditional).build();
 
     const result = await p.run({});
     expect(result.success).toBe(true);
@@ -151,7 +154,7 @@ describe('createPipeline (builder)', () => {
       return next(ctx);
     };
 
-    const p = createPipeline('test').use(logger).use(timer).step(addA).build();
+    const p = pipeline({ name: 'test' }).use(logger).use(timer).step(addA).build();
 
     await p.run({});
     // logger is outermost (added first), timer is inner
@@ -159,7 +162,7 @@ describe('createPipeline (builder)', () => {
   });
 
   it('builder objects are frozen', () => {
-    const builder = createPipeline('test');
+    const builder = pipeline({ name: 'test' });
     expect(Object.isFrozen(builder)).toBe(true);
   });
 
@@ -178,17 +181,42 @@ describe('createPipeline (builder)', () => {
       });
 
       expect(() =>
-        createPipeline('test', { strict: true }).step(first).step(second).build(),
+        pipeline({ name: 'test', strict: true }).step(first).step(second).build(),
       ).toThrow(RunsheetError);
     });
 
     it('works with argsSchema and strict together', () => {
       expect(() =>
-        createPipeline('test', z.object({ x: z.string() }), { strict: true })
+        pipeline({
+          name: 'test',
+          argsSchema: z.object({ x: z.string() }),
+          strict: true,
+        })
           .step(addA)
           .step(addB)
           .build(),
       ).not.toThrow();
+    });
+  });
+
+  describe('createPipeline (deprecated, backwards compat)', () => {
+    it('still works as before', async () => {
+      const p = createPipeline<{ name: string }>('test')
+        .step(
+          defineStep({
+            name: 'greet',
+            requires: z.object({ name: z.string() }),
+            provides: z.object({ greeting: z.string() }),
+            run: async (ctx) => ({ greeting: `Hi ${ctx.name}` }),
+          }),
+        )
+        .build();
+
+      const result = await p.run({ name: 'Alice' });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.greeting).toBe('Hi Alice');
+      }
     });
   });
 });

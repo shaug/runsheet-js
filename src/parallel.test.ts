@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, pipeline, createPipeline, parallel, when, RunsheetError } from './index.js';
+import { defineStep, pipeline, parallel, when, RunsheetError } from './index.js';
 
 describe('parallel', () => {
   const stepA = defineStep({
@@ -50,7 +50,7 @@ describe('parallel', () => {
     });
 
     it('works with the builder API', async () => {
-      const p = createPipeline('test').step(parallel(stepA, stepB)).build();
+      const p = pipeline({ name: 'test' }).step(parallel(stepA, stepB)).build();
 
       const result = await p.run({});
       expect(result.success).toBe(true);

@@ -1,6 +1,7 @@
 import type {
   AggregateResult,
   AggregateStep,
+  ExtractProvides,
   RollbackFailure,
   RollbackReport,
   Step,
@@ -8,10 +9,14 @@ import type {
   StepOutput,
   StepResult,
   StepSchema,
-  ExtractProvides,
   UnionToIntersection,
 } from './types.js';
 import type { StepMiddleware } from './middleware.js';
+import type { PipelineBuilder } from './builder.js';
+// Circular import: builder.ts → buildPipelineStep (here), pipeline.ts →
+// makeBuilder (builder.ts). Safe in ESM because both are function
+// declarations — they're available by the time any function is called.
+import { makeBuilder } from './builder.js';
 import { applyMiddleware } from './middleware.js';
 import { ArgsValidationError, PredicateError, StrictOverlapError } from './errors.js';
 import {
@@ -31,8 +36,7 @@ import { isConditionalStep } from './when.js';
 /**
  * Internal configuration shape for the pipeline engine.
  *
- * Users typically don't construct this directly — use `pipeline()`
- * or `createPipeline()` instead.
+ * Users typically don't construct this directly — use `pipeline()`.
  */
 export type PipelineConfig = {
   /** Pipeline name, used in execution metadata and error messages. */
@@ -234,48 +238,11 @@ async function executePipeline(
 }
 
 // ---------------------------------------------------------------------------
-// Public API
+// Build an AggregateStep from a PipelineConfig
 // ---------------------------------------------------------------------------
 
-/**
- * Create a pipeline from an array of steps.
- *
- * Returns an {@link AggregateStep} — pipelines ARE steps. A pipeline
- * can be used directly in another pipeline's steps array for
- * composition.
- *
- * The `run()` method returns an {@link AggregateResult} which extends
- * {@link StepResult} with orchestration metadata (`stepsExecuted`).
- *
- * @example
- * ```ts
- * const checkout = pipeline({
- *   name: 'checkout',
- *   steps: [validateOrder, chargePayment, sendConfirmation],
- *   middleware: [logging, timing],
- *   argsSchema: z.object({ orderId: z.string() }),
- * });
- *
- * const result = await checkout.run({ orderId: '123' });
- * if (result.success) {
- *   result.data.chargeId;          // string — fully typed
- *   result.meta.stepsExecuted;     // string[] — orchestration detail
- * }
- *
- * // Compose: use checkout as a step in another pipeline
- * const mega = pipeline({
- *   name: 'mega',
- *   steps: [checkout, shipOrder, notify],
- * });
- * ```
- *
- * @typeParam Args - The pipeline's input type.
- * @typeParam S - The step types in the array.
- * @param config - Pipeline configuration.
- * @returns A frozen {@link AggregateStep} whose `run()` returns an
- *   {@link AggregateResult}.
- */
-export function pipeline<Args extends StepContext = StepContext, S extends Step = Step>(config: {
+/** @internal — used by the builder; not part of the public API. */
+export function buildPipelineStep<Args extends StepContext, S extends Step>(config: {
   readonly name: string;
   readonly steps: readonly S[];
   readonly middleware?: readonly StepMiddleware[];
@@ -314,4 +281,98 @@ export function pipeline<Args extends StepContext = StepContext, S extends Step 
     run,
     rollback,
   }) as unknown as AggregateStep<Args, Args & UnionToIntersection<ExtractProvides<S>>>;
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a pipeline — either directly from steps, or via the fluent
+ * builder API.
+ *
+ * **With steps** — returns an {@link AggregateStep} immediately:
+ *
+ * ```ts
+ * const checkout = pipeline({
+ *   name: 'checkout',
+ *   steps: [validateOrder, chargePayment, sendConfirmation],
+ *   middleware: [logging, timing],
+ *   argsSchema: z.object({ orderId: z.string() }),
+ * });
+ * ```
+ *
+ * **Without steps** — returns a {@link PipelineBuilder} with
+ * progressive type narrowing:
+ *
+ * ```ts
+ * const checkout = pipeline({ name: 'checkout' })
+ *   .step(validateOrder)
+ *   .step(chargePayment)
+ *   .build();
+ *
+ * // With schema (runtime validation):
+ * pipeline({
+ *   name: 'checkout',
+ *   argsSchema: z.object({ orderId: z.string() }),
+ * }).step(validateOrder).build();
+ *
+ * // Type-only args (no runtime validation):
+ * pipeline<{ orderId: string }>({ name: 'checkout' })
+ *   .step(validateOrder)
+ *   .build();
+ * ```
+ *
+ * Pipelines ARE steps — they can be used directly in another
+ * pipeline's steps array for composition.
+ */
+
+// Overload: with steps → AggregateStep
+export function pipeline<Args extends StepContext = StepContext, S extends Step = Step>(config: {
+  readonly name: string;
+  readonly steps: readonly S[];
+  readonly middleware?: readonly StepMiddleware[];
+  readonly argsSchema?: StepSchema<Args>;
+  readonly strict?: boolean;
+}): AggregateStep<Args, Args & UnionToIntersection<ExtractProvides<S>>>;
+
+// Overload: without steps → PipelineBuilder
+export function pipeline<Args extends StepContext = StepContext>(config: {
+  readonly name: string;
+  readonly middleware?: readonly StepMiddleware[];
+  readonly argsSchema?: StepSchema<Args>;
+  readonly strict?: boolean;
+}): PipelineBuilder<Args, Args>;
+
+// Implementation
+export function pipeline<Args extends StepContext, S extends Step = Step>(config: {
+  readonly name: string;
+  readonly steps?: readonly S[];
+  readonly middleware?: readonly StepMiddleware[];
+  readonly argsSchema?: StepSchema<Args>;
+  readonly strict?: boolean;
+}):
+  | AggregateStep<Args, Args & UnionToIntersection<ExtractProvides<S>>>
+  | PipelineBuilder<Args, Args> {
+  // With steps → build immediately
+  if (config.steps) {
+    return buildPipelineStep(
+      config as {
+        readonly name: string;
+        readonly steps: readonly S[];
+        readonly middleware?: readonly StepMiddleware[];
+        readonly argsSchema?: StepSchema<Args>;
+        readonly strict?: boolean;
+      },
+    );
+  }
+
+  // Without steps → return builder
+  return makeBuilder<Args, Args>({
+    name: config.name,
+    steps: [],
+    middleware: config.middleware ? [...config.middleware] : [],
+    argsSchema: config.argsSchema,
+    strict: config.strict ?? false,
+  });
 }

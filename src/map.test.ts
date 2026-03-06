@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, pipeline, createPipeline, map, RunsheetError } from './index.js';
+import { defineStep, pipeline, map, RunsheetError } from './index.js';
 
 describe('map', () => {
   describe('function callback', () => {
@@ -340,7 +340,7 @@ describe('map', () => {
     });
 
     it('works with the builder API', async () => {
-      const p = createPipeline<{ nums: number[] }>('test')
+      const p = pipeline<{ nums: number[] }>({ name: 'test' })
         .step(
           map(
             'doubled',

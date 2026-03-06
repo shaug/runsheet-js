@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, pipeline, createPipeline, flatMap, filter } from './index.js';
+import { defineStep, pipeline, flatMap, filter } from './index.js';
 
 describe('flatMap', () => {
   describe('sync callback', () => {
@@ -274,7 +274,7 @@ describe('flatMap', () => {
     });
 
     it('works with the builder API', async () => {
-      const p = createPipeline<{ groups: number[][] }>('test')
+      const p = pipeline<{ groups: number[][] }>({ name: 'test' })
         .step(
           flatMap(
             'flat',
