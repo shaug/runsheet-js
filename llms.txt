@@ -231,17 +231,17 @@ const pipeline = buildPipeline({
     choice(
       [(ctx) => ctx.method === 'card', chargeCard],
       [(ctx) => ctx.method === 'bank', chargeBankTransfer],
-      [() => true, chargeDefault], // default
+      chargeDefault, // default (bare step)
     ),
     sendConfirmation,
   ],
 });
 ```
 
-Predicates are evaluated in order — first match wins. Use `[() => true, step]`
-as the last branch for a default/catch-all. If no predicate matches, the step
-fails with RunsheetError code 'CHOICE_NO_MATCH'. Only the matched branch
-participates in rollback.
+Predicates are evaluated in order — first match wins. A bare step (without a
+tuple) can be passed as the last argument to serve as a default — equivalent to
+`[() => true, step]`. If no predicate matches, the step fails with RunsheetError
+code 'CHOICE_NO_MATCH'. Only the matched branch participates in rollback.
 
 ### Dependency injection
 

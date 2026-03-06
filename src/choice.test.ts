@@ -157,6 +157,46 @@ describe('choice', () => {
         expect(result.data.chargeId).toBe('default_0');
       }
     });
+
+    it('supports a bare step as the default (no tuple wrapper)', async () => {
+      const defaultStep = defineStep({
+        name: 'default',
+        provides: z.object({ chargeId: z.string() }),
+        run: async () => ({ chargeId: 'default_0' }),
+      });
+
+      const pipeline = buildPipeline({
+        name: 'test',
+        steps: [
+          choice(
+            [(ctx) => ctx.method === 'card', chargeCard],
+            defaultStep, // bare step as default
+          ),
+        ],
+      });
+
+      const result = await pipeline.run({ method: 'crypto', amount: 0 });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.chargeId).toBe('default_0');
+      }
+    });
+
+    it('includes bare default step name in choice name', async () => {
+      const defaultStep = defineStep({
+        name: 'defaultCharge',
+        provides: z.object({ chargeId: z.string() }),
+        run: async () => ({ chargeId: 'x' }),
+      });
+
+      const pipeline = buildPipeline({
+        name: 'test',
+        steps: [choice([(ctx) => ctx.method === 'card', chargeCard], defaultStep)],
+      });
+
+      const result = await pipeline.run({ method: 'crypto', amount: 0 });
+      expect(result.meta.stepsExecuted).toEqual(['choice(chargeCard, defaultCharge)']);
+    });
   });
 
   describe('failure handling', () => {

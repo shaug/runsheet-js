@@ -359,17 +359,17 @@ const placeOrder = buildPipeline({
     choice(
       [(ctx) => ctx.method === 'card', chargeCard],
       [(ctx) => ctx.method === 'bank', chargeBankTransfer],
-      [() => true, chargeDefault], // default
+      chargeDefault, // default (bare step)
     ),
     sendConfirmation,
   ],
 });
 ```
 
-Predicates are evaluated in order — first match wins. Use `[() => true, step]`
-as the last branch for a default/catch-all. If no predicate matches, the step
-fails with a `CHOICE_NO_MATCH` error. Only the matched branch participates in
-rollback.
+Predicates are evaluated in order — first match wins. A bare step (without a
+tuple) can be passed as the last argument to serve as a default — equivalent to
+`[() => true, step]`. If no predicate matches, the step fails with a
+`CHOICE_NO_MATCH` error. Only the matched branch participates in rollback.
 
 ## Rollback
 
@@ -488,8 +488,9 @@ are rolled back before the error propagates. p
 ### `choice(...branches)`
 
 Execute the first branch whose predicate returns `true`. Each branch is a
-`[predicate, step]` tuple. Returns a single step usable anywhere a regular step
-is accepted. Only the matched branch participates in rollback.
+`[predicate, step]` tuple. A bare step can be passed as the last argument as a
+default. Returns a single step usable anywhere a regular step is accepted. Only
+the matched branch participates in rollback.
 
 ### `when(predicate, step)`
 

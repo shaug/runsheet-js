@@ -17,12 +17,16 @@ type BranchTuple = readonly [(ctx: Readonly<StepContext>) => boolean, TypedStep]
 /** Extract the Requires type from a branch tuple's step. */
 type BranchRequires<T> = T extends readonly [unknown, infer S extends Step]
   ? ExtractRequires<S>
-  : StepContext;
+  : T extends Step
+    ? ExtractRequires<T>
+    : StepContext;
 
 /** Extract the Provides type from a branch tuple's step. */
 type BranchProvides<T> = T extends readonly [unknown, infer S extends Step]
   ? ExtractProvides<S>
-  : StepContext;
+  : T extends Step
+    ? ExtractProvides<T>
+    : StepContext;
 
 // ---------------------------------------------------------------------------
 // Schema validation (mirrors parallel.ts)
@@ -43,6 +47,24 @@ function validateInnerSchema(
 }
 
 // ---------------------------------------------------------------------------
+// Normalize args: convert trailing bare step into a [() => true, step] tuple
+// ---------------------------------------------------------------------------
+
+function normalizeBranches(
+  args: readonly (BranchTuple | TypedStep)[],
+): readonly (readonly [(ctx: Readonly<StepContext>) => boolean, Step])[] {
+  return args.map((arg) => {
+    if (Array.isArray(arg))
+      return arg as unknown as readonly [(ctx: Readonly<StepContext>) => boolean, Step];
+    // Bare step → default branch
+    return [() => true, arg] as const as unknown as readonly [
+      (ctx: Readonly<StepContext>) => boolean,
+      Step,
+    ];
+  });
+}
+
+// ---------------------------------------------------------------------------
 // choice()
 // ---------------------------------------------------------------------------
 
@@ -53,7 +75,8 @@ function validateInnerSchema(
  * in order, and the first match wins. Exactly one branch executes. If no
  * predicate matches, the step fails with a `CHOICE_NO_MATCH` error.
  *
- * Use `[() => true, step]` as the last branch for a default/catch-all.
+ * A bare step (without a predicate tuple) can be passed as the last argument
+ * to serve as a default branch — it is equivalent to `[() => true, step]`.
  *
  * All branches should provide the same output shape so that subsequent
  * steps can rely on a consistent context type.
@@ -67,26 +90,37 @@ function validateInnerSchema(
  *     choice(
  *       [(ctx) => ctx.method === 'card', chargeCard],
  *       [(ctx) => ctx.method === 'bank', chargeBankTransfer],
- *       [() => true, chargeDefault], // default
+ *       chargeDefault, // default
  *     ),
  *     sendReceipt,
  *   ],
  * });
  * ```
  *
- * @param branches - One or more `[predicate, step]` tuples.
+ * @param branches - One or more `[predicate, step]` tuples, optionally
+ *   followed by a bare step as the default.
  * @returns A frozen {@link TypedStep} that executes the first matching branch.
  */
+
+// Overload: all branches are tuples (no default)
 export function choice<B extends readonly BranchTuple[]>(
   ...branches: [...B]
 ): TypedStep<
   AsContext<UnionToIntersection<BranchRequires<B[number]>>>,
   AsContext<UnionToIntersection<BranchProvides<B[number]>>>
-> {
-  const innerBranches = branches as unknown as readonly (readonly [
-    predicate: (ctx: Readonly<StepContext>) => boolean,
-    step: Step,
-  ])[];
+>;
+
+// Overload: tuples + trailing bare step as default
+export function choice<B extends readonly BranchTuple[], D extends TypedStep>(
+  ...args: [...B, D]
+): TypedStep<
+  AsContext<UnionToIntersection<BranchRequires<B[number]> | ExtractRequires<D>>>,
+  AsContext<UnionToIntersection<BranchProvides<B[number]> | ExtractProvides<D>>>
+>;
+
+// Implementation
+export function choice(...args: (BranchTuple | TypedStep)[]): TypedStep<StepContext, StepContext> {
+  const innerBranches = normalizeBranches(args);
   const name = `choice(${innerBranches.map(([, step]) => step.name).join(', ')})`;
 
   // Track which branch ran per execution for rollback.
@@ -164,8 +198,5 @@ export function choice<B extends readonly BranchTuple[]>(
     rollback,
     retry: undefined,
     timeout: undefined,
-  }) as unknown as TypedStep<
-    AsContext<UnionToIntersection<BranchRequires<B[number]>>>,
-    AsContext<UnionToIntersection<BranchProvides<B[number]>>>
-  >;
+  }) as unknown as TypedStep<StepContext, StepContext>;
 }
