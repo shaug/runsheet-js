@@ -23,7 +23,8 @@ export type RunsheetErrorCode =
   | 'RETRY_EXHAUSTED'
   | 'STRICT_OVERLAP'
   | 'CHOICE_NO_MATCH'
-  | 'ROLLBACK';
+  | 'ROLLBACK'
+  | 'UNKNOWN';
 
 /**
  * Base error class for all errors produced by the runsheet library.
@@ -128,6 +129,18 @@ export class ChoiceNoMatchError extends RunsheetError {
   constructor(message: string) {
     super('CHOICE_NO_MATCH', message);
     this.name = 'ChoiceNoMatchError';
+  }
+}
+
+/** A non-Error value was thrown and caught by the pipeline engine. */
+export class UnknownError extends RunsheetError {
+  /** The original thrown value before stringification. */
+  readonly originalValue: unknown;
+
+  constructor(message: string, originalValue: unknown) {
+    super('UNKNOWN', message);
+    this.name = 'UnknownError';
+    this.originalValue = originalValue;
   }
 }
 

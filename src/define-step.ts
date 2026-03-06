@@ -7,6 +7,9 @@ import { RetryExhaustedError, TimeoutError } from './errors.js';
 // Timeout and retry wrappers
 // ---------------------------------------------------------------------------
 
+// NOTE: Promise.race doesn't cancel the underlying run — if the timer wins,
+// the step's side effects continue in the background. True cancellation
+// would require AbortSignal propagation into step run functions.
 function withTimeout(
   run: (ctx: Readonly<StepContext>) => Promise<Result<StepOutput>>,
   stepName: string,

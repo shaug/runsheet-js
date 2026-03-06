@@ -155,6 +155,44 @@ describe('middleware', () => {
     expect(result.success).toBe(false);
   });
 
+  it('middleware throw triggers rollback of prior steps', async () => {
+    const rollbackOrder: string[] = [];
+
+    const a = defineStep({
+      name: 'a',
+      provides: z.object({ a: z.number() }),
+      run: async () => ({ a: 1 }),
+      rollback: async () => {
+        rollbackOrder.push('a');
+      },
+    });
+
+    const b = defineStep({
+      name: 'b',
+      run: async () => ({ b: 2 }),
+    });
+
+    const explodeOnB: StepMiddleware = (step, next) => async (ctx) => {
+      if (step.name === 'b') throw new Error('middleware boom');
+      return next(ctx);
+    };
+
+    const pipeline = buildPipeline({
+      name: 'test',
+      steps: [a, b],
+      middleware: [explodeOnB],
+    });
+
+    const result = await pipeline.run({});
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.failedStep).toBe('b');
+      expect(result.errors[0].message).toBe('middleware boom');
+      expect(result.rollback.completed).toEqual(['a']);
+    }
+    expect(rollbackOrder).toEqual(['a']);
+  });
+
   it('receives step metadata', async () => {
     const stepInfos: Array<{ name: string; hasRequires: boolean; hasProvides: boolean }> = [];
 

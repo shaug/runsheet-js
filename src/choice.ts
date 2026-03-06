@@ -7,7 +7,7 @@ import type {
   UnionToIntersection,
 } from './types.js';
 import type { AsContext } from './internal.js';
-import { runInnerStep } from './internal.js';
+import { runInnerStep, toError } from './internal.js';
 import { ChoiceNoMatchError, PredicateError, RollbackError } from './errors.js';
 
 /** A [predicate, step] tuple used by {@link choice}. */
@@ -117,9 +117,9 @@ export function choice(...args: (BranchTuple | TypedStep)[]): TypedStep<StepCont
       try {
         matches = predicate(ctx);
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        const error = new PredicateError(`${name} predicate: ${message}`);
-        if (err instanceof Error) error.cause = err;
+        const cause = toError(err);
+        const error = new PredicateError(`${name} predicate: ${cause.message}`);
+        error.cause = cause;
         return { success: false, errors: [error] };
       }
 
@@ -151,7 +151,7 @@ export function choice(...args: (BranchTuple | TypedStep)[]): TypedStep<StepCont
         await step.rollback(ctx, output);
       } catch (err) {
         const error = new RollbackError(`${name}: 1 rollback(s) failed`);
-        error.cause = [err instanceof Error ? err : new Error(String(err))];
+        error.cause = [toError(err)];
         throw error;
       }
     }

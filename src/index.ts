@@ -10,6 +10,7 @@ export {
   StrictOverlapError,
   ChoiceNoMatchError,
   RollbackError,
+  UnknownError,
 } from './errors.js';
 export type { RunsheetErrorCode } from './errors.js';
 export { buildPipeline } from './pipeline.js';
@@ -20,6 +21,7 @@ export { parallel } from './parallel.js';
 export { choice } from './choice.js';
 export { map } from './map.js';
 export { filter } from './filter.js';
+export { flatMap } from './flat-map.js';
 export type { StepMiddleware, StepInfo, StepExecutor } from './middleware.js';
 export { createPipeline } from './builder.js';
 export type { PipelineBuilder } from './builder.js';

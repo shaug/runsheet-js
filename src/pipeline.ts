@@ -22,6 +22,7 @@ import {
 } from './errors.js';
 import { applyMiddleware } from './middleware.js';
 import { isConditionalStep } from './when.js';
+import { toError } from './internal.js';
 
 // ---------------------------------------------------------------------------
 // Pipeline configuration
@@ -113,6 +114,8 @@ export type Pipeline<Args extends StepContext, Ctx> = {
 // ---------------------------------------------------------------------------
 // Schema validation
 // ---------------------------------------------------------------------------
+// Pipeline-level validation returns parsed data for passthrough.
+// See internal.ts for the combinator variant (validateInnerSchema).
 
 type ValidationErrorClass = new (message: string) => RunsheetError;
 
@@ -155,7 +158,7 @@ async function executeRollback(
     } catch (err) {
       failed.push({
         step: step.name,
-        error: err instanceof Error ? err : new Error(String(err)),
+        error: toError(err),
       });
     }
   }
@@ -313,9 +316,9 @@ async function executePipeline(
         continue;
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      const error = new PredicateError(`${step.name} predicate: ${message}`);
-      if (err instanceof Error) error.cause = err;
+      const cause = toError(err);
+      const error = new PredicateError(`${step.name} predicate: ${cause.message}`);
+      error.cause = cause;
       const rollback = await executeRollback(state.executedSteps, state.snapshots, state.outputs);
       return pipelineFailure(config.name, args, state, step.name, [error], rollback);
     }
@@ -336,7 +339,7 @@ async function executePipeline(
     try {
       result = await executor(state.context);
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
+      const error = toError(err);
       state.snapshots.pop();
       const rollback = await executeRollback(state.executedSteps, state.snapshots, state.outputs);
       return pipelineFailure(config.name, args, state, step.name, [error], rollback);
@@ -349,7 +352,10 @@ async function executePipeline(
       return pipelineFailure(config.name, args, state, step.name, result.errors, rollback);
     }
 
-    // Track step output and accumulate context
+    // Track step output and accumulate context.
+    // IMPORTANT: result.data is stored by reference. The choice() and map()
+    // combinators rely on this exact reference for WeakMap-based rollback
+    // tracking. Do not clone or spread result.data before storing it here.
     const output = result.data;
     state.outputs.push(output);
     state.executedSteps.push(step);

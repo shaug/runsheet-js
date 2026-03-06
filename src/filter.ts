@@ -1,5 +1,6 @@
 import type { Result } from 'composable-functions';
 import type { Step, StepContext, StepOutput, TypedStep } from './types.js';
+import { toError } from './internal.js';
 
 // ---------------------------------------------------------------------------
 // filter()
@@ -55,7 +56,7 @@ export function filter<K extends string, Item>(
     } catch (err) {
       return {
         success: false,
-        errors: [err instanceof Error ? err : new Error(String(err))],
+        errors: [toError(err)],
       };
     }
 
@@ -96,7 +97,7 @@ async function runFilter(
   for (let i = 0; i < settled.length; i++) {
     const s = settled[i];
     if (s.status === 'rejected') {
-      allErrors.push(s.reason instanceof Error ? s.reason : new Error(String(s.reason)));
+      allErrors.push(toError(s.reason));
     } else if (s.value) {
       results.push(items[i]);
     }

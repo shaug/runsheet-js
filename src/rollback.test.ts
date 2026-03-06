@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, buildPipeline } from './index.js';
+import { defineStep, buildPipeline, UnknownError } from './index.js';
 
 describe('rollback', () => {
   it('executes rollbacks in reverse order on failure', async () => {
@@ -295,8 +295,9 @@ describe('rollback', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.rollback.failed).toHaveLength(1);
-      expect(result.rollback.failed[0].error).toBeInstanceOf(Error);
+      expect(result.rollback.failed[0].error).toBeInstanceOf(UnknownError);
       expect(result.rollback.failed[0].error.message).toBe('string error');
+      expect((result.rollback.failed[0].error as UnknownError).originalValue).toBe('string error');
     }
   });
 

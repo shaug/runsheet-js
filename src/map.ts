@@ -1,6 +1,6 @@
 import type { Result } from 'composable-functions';
 import type { ExtractProvides, Step, StepContext, StepOutput, TypedStep } from './types.js';
-import { runInnerStep } from './internal.js';
+import { runInnerStep, toError } from './internal.js';
 import { RollbackError } from './errors.js';
 
 // ---------------------------------------------------------------------------
@@ -96,7 +96,7 @@ export function map(
     } catch (err) {
       return {
         success: false,
-        errors: [err instanceof Error ? err : new Error(String(err))],
+        errors: [toError(err)],
       };
     }
 
@@ -126,7 +126,7 @@ export function map(
             const itemCtx = { ...exec.ctx, ...(exec.items[i] as StepContext) };
             await step.rollback(itemCtx, results[i]);
           } catch (err) {
-            errors.push(err instanceof Error ? err : new Error(String(err)));
+            errors.push(toError(err));
           }
         }
         if (errors.length > 0) {
@@ -173,7 +173,7 @@ async function runStepMode(
   for (let i = 0; i < settled.length; i++) {
     const s = settled[i];
     if (s.status === 'rejected') {
-      allErrors.push(s.reason instanceof Error ? s.reason : new Error(String(s.reason)));
+      allErrors.push(toError(s.reason));
     } else if (!s.value.success) {
       allErrors.push(...s.value.errors);
     } else {
@@ -220,7 +220,7 @@ async function runFunctionMode(
 
   for (const s of settled) {
     if (s.status === 'rejected') {
-      allErrors.push(s.reason instanceof Error ? s.reason : new Error(String(s.reason)));
+      allErrors.push(toError(s.reason));
     } else {
       results.push(s.value);
     }

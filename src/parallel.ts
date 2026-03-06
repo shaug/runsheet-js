@@ -8,7 +8,7 @@ import type {
   UnionToIntersection,
 } from './types.js';
 import type { AsContext } from './internal.js';
-import { runInnerStep } from './internal.js';
+import { runInnerStep, toError } from './internal.js';
 import { PredicateError, RollbackError } from './errors.js';
 import { isConditionalStep } from './when.js';
 
@@ -34,9 +34,9 @@ async function executeInner(step: Step, ctx: Readonly<StepContext>): Promise<Inn
       return { step, skipped: true };
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    const error = new PredicateError(`${step.name} predicate: ${message}`);
-    if (err instanceof Error) error.cause = err;
+    const cause = toError(err);
+    const error = new PredicateError(`${step.name} predicate: ${cause.message}`);
+    error.cause = cause;
     return { step, skipped: false, errors: [error] };
   }
 
@@ -100,7 +100,7 @@ export function parallel<S extends readonly TypedStep[]>(
 
     for (const s of settled) {
       if (s.status === 'rejected') {
-        allErrors.push(s.reason instanceof Error ? s.reason : new Error(String(s.reason)));
+        allErrors.push(toError(s.reason));
       } else {
         const r = s.value;
         if (r.skipped) continue;
@@ -150,7 +150,7 @@ export function parallel<S extends readonly TypedStep[]>(
       try {
         await step.rollback(ctx, mergedOutput);
       } catch (err) {
-        errors.push(err instanceof Error ? err : new Error(String(err)));
+        errors.push(toError(err));
       }
     }
     if (errors.length > 0) {
