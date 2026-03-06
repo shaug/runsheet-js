@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.1](https://github.com/shaug/runsheet-js/compare/v0.2.0...v0.2.1) (2026-03-06)
+
+
+### Bug Fixes
+
+* **ci:** fix npm trusted publisher OIDC auth ([e042b75](https://github.com/shaug/runsheet-js/commit/e042b75cc0918bb63a5e62d63f1dcd9c756bff35))
+* **ci:** match npm trusted publisher sample workflow ([9f0da81](https://github.com/shaug/runsheet-js/commit/9f0da8135268768c624d586f1145cf27e15969ba))
+* **ci:** restore registry-url for trusted publisher OIDC ([0281bc8](https://github.com/shaug/runsheet-js/commit/0281bc87dc0ffd4b14390f24ed16ec6280b27f82))
+
 ## [0.2.0](https://github.com/shaug/runsheet-js/compare/v0.1.0...v0.2.0) (2026-03-05)
 
 
