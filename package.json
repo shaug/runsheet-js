@@ -1,6 +1,6 @@
 {
   "name": "runsheet",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Type-safe, composable business logic pipelines for TypeScript",
   "type": "module",
   "main": "./dist/index.cjs",

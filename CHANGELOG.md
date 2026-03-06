@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0](https://github.com/shaug/runsheet-js/compare/v0.4.0...v0.5.0) (2026-03-06)
+
+
+### Features
+
+* add choice() combinator for conditional branching ([825a001](https://github.com/shaug/runsheet-js/commit/825a001eaf25aa2e84e089ade8af08ece28b8697))
+* add filter() combinator for collection filtering ([fba3251](https://github.com/shaug/runsheet-js/commit/fba325138d23b69bbd0f4708cfbde9c94cbb6a53))
+* add flatMap() combinator for collection expansion ([41e30b3](https://github.com/shaug/runsheet-js/commit/41e30b3109fde7178c1783c5fa204d54db2927e3))
+* add map() combinator for collection iteration ([ff4cdd1](https://github.com/shaug/runsheet-js/commit/ff4cdd1aefa07d9fa3d3619e6ca1ab1139c88290))
+* support bare step as default in choice() ([3de6c8b](https://github.com/shaug/runsheet-js/commit/3de6c8b7d3f3cee6b71630706e1ee3b93eb4a5c2))
+
 ## [0.4.0](https://github.com/shaug/runsheet-js/compare/v0.3.1...v0.4.0) (2026-03-06)
 
 
