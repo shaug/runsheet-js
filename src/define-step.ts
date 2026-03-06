@@ -1,7 +1,7 @@
 import { composable } from 'composable-functions';
 import type { Result } from 'composable-functions';
 import type { RetryPolicy, StepConfig, StepContext, StepOutput, Step, TypedStep } from './types.js';
-import { RunsheetError } from './errors.js';
+import { RetryExhaustedError, TimeoutError } from './errors.js';
 
 // ---------------------------------------------------------------------------
 // Timeout and retry wrappers
@@ -16,7 +16,7 @@ function withTimeout(
     let timer: ReturnType<typeof setTimeout>;
     const timeout = new Promise<Result<StepOutput>>((resolve) => {
       timer = setTimeout(() => {
-        const error = new RunsheetError('TIMEOUT', `${stepName} timed out after ${ms}ms`);
+        const error = new TimeoutError(`${stepName} timed out after ${ms}ms`, ms);
         resolve({ success: false, errors: [error] });
       }, ms);
     });
@@ -55,9 +55,9 @@ function withRetry(
     }
 
     // Wrap the last failure with RETRY_EXHAUSTED
-    const error = new RunsheetError(
-      'RETRY_EXHAUSTED',
+    const error = new RetryExhaustedError(
       `${stepName} failed after ${policy.count} retries`,
+      policy.count + 1,
     );
     return { success: false, errors: [...lastResult.errors, error] };
   };

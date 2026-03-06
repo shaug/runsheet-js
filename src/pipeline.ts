@@ -12,8 +12,14 @@ import type {
   UnionToIntersection,
 } from './types.js';
 import type { StepMiddleware } from './middleware.js';
-import type { RunsheetErrorCode } from './errors.js';
-import { RunsheetError } from './errors.js';
+import {
+  type RunsheetError,
+  ArgsValidationError,
+  PredicateError,
+  RequiresValidationError,
+  ProvidesValidationError,
+  StrictOverlapError,
+} from './errors.js';
 import { applyMiddleware } from './middleware.js';
 import { isConditionalStep } from './when.js';
 
@@ -62,9 +68,10 @@ function checkStrictOverlap(steps: readonly Step[]): void {
     for (const key of Object.keys(shape)) {
       const existing = seen.get(key);
       if (existing) {
-        throw new RunsheetError(
-          'STRICT_OVERLAP',
+        throw new StrictOverlapError(
           `strict mode: key "${key}" is provided by both "${existing}" and "${step.name}"`,
+          key,
+          [existing, step.name],
         );
       }
       seen.set(key, step.name);
@@ -107,11 +114,13 @@ export type Pipeline<Args extends StepContext, Ctx> = {
 // Schema validation
 // ---------------------------------------------------------------------------
 
+type ValidationErrorClass = new (message: string) => RunsheetError;
+
 function validateSchema<T>(
   schema: ParserSchema<T> | undefined,
   data: unknown,
   label: string,
-  code: RunsheetErrorCode,
+  ErrorClass: ValidationErrorClass,
 ): { success: true; data: T } | { success: false; errors: RunsheetError[] } {
   if (!schema) return { success: true, data: data as T };
 
@@ -119,7 +128,7 @@ function validateSchema<T>(
   if (parsed.success) return { success: true, data: parsed.data };
 
   const errors = parsed.error.issues.map(
-    (issue) => new RunsheetError(code, `${label}: ${issue.path.join('.')}: ${issue.message}`),
+    (issue) => new ErrorClass(`${label}: ${issue.path.join('.')}: ${issue.message}`),
   );
   return { success: false, errors };
 }
@@ -235,7 +244,7 @@ function createStepExecutor(
       step.requires,
       ctx,
       `${step.name} requires`,
-      'REQUIRES_VALIDATION',
+      RequiresValidationError,
     );
     if (!requiresCheck.success) {
       return { success: false, errors: requiresCheck.errors };
@@ -250,7 +259,7 @@ function createStepExecutor(
       step.provides,
       result.data,
       `${step.name} provides`,
-      'PROVIDES_VALIDATION',
+      ProvidesValidationError,
     );
     if (!providesCheck.success) {
       return { success: false, errors: providesCheck.errors };
@@ -278,7 +287,7 @@ async function executePipeline(
       config.argsSchema,
       args,
       `${config.name} args`,
-      'ARGS_VALIDATION',
+      ArgsValidationError,
     );
     if (!argsCheck.success) {
       const state = createExecutionState(args);
@@ -305,7 +314,7 @@ async function executePipeline(
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const error = new RunsheetError('PREDICATE', `${step.name} predicate: ${message}`);
+      const error = new PredicateError(`${step.name} predicate: ${message}`);
       if (err instanceof Error) error.cause = err;
       const rollback = await executeRollback(state.executedSteps, state.snapshots, state.outputs);
       return pipelineFailure(config.name, args, state, step.name, [error], rollback);

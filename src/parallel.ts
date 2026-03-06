@@ -9,7 +9,7 @@ import type {
 } from './types.js';
 import type { AsContext } from './internal.js';
 import { runInnerStep } from './internal.js';
-import { RunsheetError } from './errors.js';
+import { PredicateError, RollbackError } from './errors.js';
 import { isConditionalStep } from './when.js';
 
 // ---------------------------------------------------------------------------
@@ -35,7 +35,7 @@ async function executeInner(step: Step, ctx: Readonly<StepContext>): Promise<Inn
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    const error = new RunsheetError('PREDICATE', `${step.name} predicate: ${message}`);
+    const error = new PredicateError(`${step.name} predicate: ${message}`);
     if (err instanceof Error) error.cause = err;
     return { step, skipped: false, errors: [error] };
   }
@@ -154,7 +154,7 @@ export function parallel<S extends readonly TypedStep[]>(
       }
     }
     if (errors.length > 0) {
-      const error = new RunsheetError('ROLLBACK', `${name}: ${errors.length} rollback(s) failed`);
+      const error = new RollbackError(`${name}: ${errors.length} rollback(s) failed`);
       error.cause = errors;
       throw error;
     }

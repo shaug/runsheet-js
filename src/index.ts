@@ -1,5 +1,16 @@
 export { defineStep } from './define-step.js';
-export { RunsheetError } from './errors.js';
+export {
+  RunsheetError,
+  RequiresValidationError,
+  ProvidesValidationError,
+  ArgsValidationError,
+  PredicateError,
+  TimeoutError,
+  RetryExhaustedError,
+  StrictOverlapError,
+  ChoiceNoMatchError,
+  RollbackError,
+} from './errors.js';
 export type { RunsheetErrorCode } from './errors.js';
 export { buildPipeline } from './pipeline.js';
 export type { Pipeline, PipelineConfig } from './pipeline.js';

@@ -8,7 +8,7 @@ import type {
 } from './types.js';
 import type { AsContext } from './internal.js';
 import { runInnerStep } from './internal.js';
-import { RunsheetError } from './errors.js';
+import { ChoiceNoMatchError, PredicateError, RollbackError } from './errors.js';
 
 /** A [predicate, step] tuple used by {@link choice}. */
 type BranchTuple = readonly [(ctx: Readonly<StepContext>) => boolean, TypedStep];
@@ -118,7 +118,7 @@ export function choice(...args: (BranchTuple | TypedStep)[]): TypedStep<StepCont
         matches = predicate(ctx);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        const error = new RunsheetError('PREDICATE', `${name} predicate: ${message}`);
+        const error = new PredicateError(`${name} predicate: ${message}`);
         if (err instanceof Error) error.cause = err;
         return { success: false, errors: [error] };
       }
@@ -137,7 +137,7 @@ export function choice(...args: (BranchTuple | TypedStep)[]): TypedStep<StepCont
     // No branch matched
     return {
       success: false,
-      errors: [new RunsheetError('CHOICE_NO_MATCH', `${name}: no branch matched`)],
+      errors: [new ChoiceNoMatchError(`${name}: no branch matched`)],
     };
   };
 
@@ -150,7 +150,7 @@ export function choice(...args: (BranchTuple | TypedStep)[]): TypedStep<StepCont
       try {
         await step.rollback(ctx, output);
       } catch (err) {
-        const error = new RunsheetError('ROLLBACK', `${name}: 1 rollback(s) failed`);
+        const error = new RollbackError(`${name}: 1 rollback(s) failed`);
         error.cause = [err instanceof Error ? err : new Error(String(err))];
         throw error;
       }

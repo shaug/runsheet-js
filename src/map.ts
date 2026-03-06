@@ -1,7 +1,7 @@
 import type { Result } from 'composable-functions';
 import type { ExtractProvides, Step, StepContext, StepOutput, TypedStep } from './types.js';
 import { runInnerStep } from './internal.js';
-import { RunsheetError } from './errors.js';
+import { RollbackError } from './errors.js';
 
 // ---------------------------------------------------------------------------
 // Runtime step detection
@@ -130,10 +130,7 @@ export function map(
           }
         }
         if (errors.length > 0) {
-          const error = new RunsheetError(
-            'ROLLBACK',
-            `${name}: ${errors.length} rollback(s) failed`,
-          );
+          const error = new RollbackError(`${name}: ${errors.length} rollback(s) failed`);
           error.cause = errors;
           throw error;
         }

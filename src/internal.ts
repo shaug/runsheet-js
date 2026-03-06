@@ -1,9 +1,11 @@
 import type { Result } from 'composable-functions';
 import type { Step, StepContext, StepOutput } from './types.js';
-import { RunsheetError } from './errors.js';
+import { RequiresValidationError, ProvidesValidationError, type RunsheetError } from './errors.js';
 
 /** Ensure a type satisfies StepContext, falling back to StepContext. */
 export type AsContext<T> = T extends StepContext ? T : StepContext;
+
+type ValidationErrorClass = typeof RequiresValidationError | typeof ProvidesValidationError;
 
 /**
  * Validate data against a step's requires or provides schema.
@@ -13,13 +15,13 @@ export function validateInnerSchema(
   schema: Step['requires'] | Step['provides'],
   data: unknown,
   label: string,
-  code: 'REQUIRES_VALIDATION' | 'PROVIDES_VALIDATION',
+  ErrorClass: ValidationErrorClass,
 ): RunsheetError[] | null {
   if (!schema) return null;
   const parsed = schema.safeParse(data);
   if (parsed.success) return null;
   return parsed.error.issues.map(
-    (issue) => new RunsheetError(code, `${label}: ${issue.path.join('.')}: ${issue.message}`),
+    (issue) => new ErrorClass(`${label}: ${issue.path.join('.')}: ${issue.message}`),
   );
 }
 
@@ -37,7 +39,7 @@ export async function runInnerStep(
     step.requires,
     ctx,
     `${step.name} requires`,
-    'REQUIRES_VALIDATION',
+    RequiresValidationError,
   );
   if (requiresErrors) return { success: false, errors: requiresErrors };
 
@@ -48,7 +50,7 @@ export async function runInnerStep(
     step.provides,
     result.data,
     `${step.name} provides`,
-    'PROVIDES_VALIDATION',
+    ProvidesValidationError,
   );
   if (providesErrors) return { success: false, errors: providesErrors };
 

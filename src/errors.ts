@@ -34,8 +34,8 @@ export type RunsheetErrorCode =
  * library itself produced it.
  *
  * Use `instanceof RunsheetError` to distinguish library errors from
- * application errors, and the `code` property to identify the
- * specific failure.
+ * application errors. Use `instanceof` on a subclass (e.g.,
+ * `TimeoutError`) or check the `code` property for specific failures.
  */
 export class RunsheetError extends Error {
   /** Discriminant code identifying the type of library error. */
@@ -49,5 +49,92 @@ export class RunsheetError extends Error {
     super(message);
     this.name = 'RunsheetError';
     this.code = code;
+  }
+}
+
+/** Schema validation failed on the accumulated context before a step ran. */
+export class RequiresValidationError extends RunsheetError {
+  constructor(message: string) {
+    super('REQUIRES_VALIDATION', message);
+    this.name = 'RequiresValidationError';
+  }
+}
+
+/** Schema validation failed on a step's output after it ran. */
+export class ProvidesValidationError extends RunsheetError {
+  constructor(message: string) {
+    super('PROVIDES_VALIDATION', message);
+    this.name = 'ProvidesValidationError';
+  }
+}
+
+/** Schema validation failed on the pipeline's input arguments. */
+export class ArgsValidationError extends RunsheetError {
+  constructor(message: string) {
+    super('ARGS_VALIDATION', message);
+    this.name = 'ArgsValidationError';
+  }
+}
+
+/** A `when()` or `choice()` predicate threw an error. */
+export class PredicateError extends RunsheetError {
+  constructor(message: string) {
+    super('PREDICATE', message);
+    this.name = 'PredicateError';
+  }
+}
+
+/** A step exceeded its configured timeout. */
+export class TimeoutError extends RunsheetError {
+  /** The timeout duration in milliseconds that was exceeded. */
+  readonly timeoutMs: number;
+
+  constructor(message: string, timeoutMs: number) {
+    super('TIMEOUT', message);
+    this.name = 'TimeoutError';
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+/** A step failed after exhausting all retry attempts. */
+export class RetryExhaustedError extends RunsheetError {
+  /** Total number of attempts (initial + retries). */
+  readonly attempts: number;
+
+  constructor(message: string, attempts: number) {
+    super('RETRY_EXHAUSTED', message);
+    this.name = 'RetryExhaustedError';
+    this.attempts = attempts;
+  }
+}
+
+/** Two steps provide the same key (strict mode, detected at build time). */
+export class StrictOverlapError extends RunsheetError {
+  /** The key that is provided by multiple steps. */
+  readonly key: string;
+  /** The names of the two steps that both provide the key. */
+  readonly steps: readonly [string, string];
+
+  constructor(message: string, key: string, steps: readonly [string, string]) {
+    super('STRICT_OVERLAP', message);
+    this.name = 'StrictOverlapError';
+    this.key = key;
+    this.steps = steps;
+  }
+}
+
+/** No branch matched in a `choice()` step. */
+export class ChoiceNoMatchError extends RunsheetError {
+  constructor(message: string) {
+    super('CHOICE_NO_MATCH', message);
+    this.name = 'ChoiceNoMatchError';
+  }
+}
+
+/** One or more rollback handlers failed in a combinator. */
+export class RollbackError extends RunsheetError {
+  constructor(message: string) {
+    super('ROLLBACK', message);
+    this.name = 'RollbackError';
   }
 }
