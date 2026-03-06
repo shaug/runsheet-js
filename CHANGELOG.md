@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/shaug/runsheet-js/compare/v0.3.0...v0.3.1) (2026-03-06)
+
+
+### Bug Fixes
+
+* **ci:** add environment and provenance for npm trusted publishers ([f216901](https://github.com/shaug/runsheet-js/commit/f216901862c28f8ca7d7ee6c790087769e6be014))
+
 ## [0.3.0](https://github.com/shaug/runsheet-js/compare/v0.2.1...v0.3.0) (2026-03-06)
 
 
