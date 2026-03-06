@@ -39,7 +39,7 @@ export async function runInnerStep(
     `${step.name} requires`,
     'REQUIRES_VALIDATION',
   );
-  if (requiresErrors) return { success: false as const, errors: requiresErrors };
+  if (requiresErrors) return { success: false, errors: requiresErrors };
 
   const result = await step.run(ctx);
   if (!result.success) return result;
@@ -50,7 +50,7 @@ export async function runInnerStep(
     `${step.name} provides`,
     'PROVIDES_VALIDATION',
   );
-  if (providesErrors) return { success: false as const, errors: providesErrors };
+  if (providesErrors) return { success: false, errors: providesErrors };
 
   return result;
 }

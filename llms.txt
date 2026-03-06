@@ -387,6 +387,7 @@ RunsheetError instances with a discriminated `code` property:
 - RETRY_EXHAUSTED — step failed after all retry attempts
 - STRICT_OVERLAP — two steps provide the same key (strict mode, build time)
 - CHOICE_NO_MATCH — no branch matched in a choice() step
+- ROLLBACK — one or more rollback handlers failed in a combinator
 
 Application errors (thrown from step run functions) pass through as-is.
 

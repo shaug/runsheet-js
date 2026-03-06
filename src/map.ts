@@ -1,5 +1,7 @@
+import type { Result } from 'composable-functions';
 import type { ExtractProvides, Step, StepContext, StepOutput, TypedStep } from './types.js';
 import { runInnerStep } from './internal.js';
+import { RunsheetError } from './errors.js';
 
 // ---------------------------------------------------------------------------
 // Runtime step detection
@@ -93,7 +95,7 @@ export function map(
       items = collection(ctx);
     } catch (err) {
       return {
-        success: false as const,
+        success: false,
         errors: [err instanceof Error ? err : new Error(String(err))],
       };
     }
@@ -115,7 +117,7 @@ export function map(
     ? async (_ctx, output) => {
         const step = fnOrStep as Step;
         if (!step.rollback) return;
-        const exec = executionMap.get(output as object);
+        const exec = executionMap.get(output);
         if (!exec) return;
         const results = (output as Record<string, unknown>)[key] as StepOutput[];
         const errors: Error[] = [];
@@ -128,7 +130,10 @@ export function map(
           }
         }
         if (errors.length > 0) {
-          const error = new Error(`${name}: ${errors.length} rollback(s) failed`);
+          const error = new RunsheetError(
+            'ROLLBACK',
+            `${name}: ${errors.length} rollback(s) failed`,
+          );
           error.cause = errors;
           throw error;
         }
@@ -157,7 +162,7 @@ async function runStepMode(
   name: string,
   key: string,
   executionMap: WeakMap<object, { items: unknown[]; ctx: StepContext }>,
-) {
+): Promise<Result<StepOutput>> {
   const settled = await Promise.allSettled(
     items.map(async (item) => {
       const itemCtx = { ...ctx, ...(item as StepContext) };
@@ -175,7 +180,7 @@ async function runStepMode(
     } else if (!s.value.success) {
       allErrors.push(...s.value.errors);
     } else {
-      succeeded.push({ index: i, output: s.value.data as StepOutput });
+      succeeded.push({ index: i, output: s.value.data });
     }
   }
 
@@ -191,14 +196,14 @@ async function runStepMode(
         }
       }
     }
-    return { success: false as const, errors: allErrors };
+    return { success: false, errors: allErrors };
   }
 
   // Collect results in original order
   const results = succeeded.map((s) => s.output);
-  const data = { [key]: results } as StepOutput;
-  executionMap.set(data, { items, ctx: ctx as StepContext });
-  return { success: true as const, data, errors: [] as [] };
+  const data: StepOutput = { [key]: results };
+  executionMap.set(data, { items, ctx: { ...ctx } });
+  return { success: true, data, errors: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +215,7 @@ async function runFunctionMode(
   items: unknown[],
   ctx: Readonly<StepContext>,
   key: string,
-) {
+): Promise<Result<StepOutput>> {
   const settled = await Promise.allSettled(items.map(async (item) => fn(item, ctx)));
 
   const results: unknown[] = [];
@@ -225,8 +230,9 @@ async function runFunctionMode(
   }
 
   if (allErrors.length > 0) {
-    return { success: false as const, errors: allErrors };
+    return { success: false, errors: allErrors };
   }
 
-  return { success: true as const, data: { [key]: results } as StepOutput, errors: [] as [] };
+  const data: StepOutput = { [key]: results };
+  return { success: true, data, errors: [] };
 }

@@ -88,8 +88,8 @@ export function parallel<S extends readonly TypedStep[]>(
   AsContext<UnionToIntersection<ExtractRequires<S[number]>>>,
   AsContext<UnionToIntersection<ExtractProvides<S[number]>>>
 > {
-  const name = `parallel(${(steps as readonly Step[]).map((s) => s.name).join(', ')})`;
-  const innerSteps = steps as readonly Step[];
+  const name = `parallel(${steps.map((s) => s.name).join(', ')})`;
+  const innerSteps: readonly Step[] = steps;
 
   // ----- run: execute all inner steps concurrently ----- //
   const run: Step['run'] = async (ctx) => {
@@ -126,7 +126,7 @@ export function parallel<S extends readonly TypedStep[]>(
           }
         }
       }
-      return { success: false as const, errors: allErrors };
+      return { success: false, errors: allErrors };
     }
 
     // Merge outputs in array order (deterministic)
@@ -135,7 +135,7 @@ export function parallel<S extends readonly TypedStep[]>(
       Object.assign(merged, output);
     }
 
-    return { success: true as const, data: merged, errors: [] as [] };
+    return { success: true, data: merged, errors: [] };
   };
 
   // ----- rollback: called when a later sequential step fails ----- //
@@ -154,7 +154,7 @@ export function parallel<S extends readonly TypedStep[]>(
       }
     }
     if (errors.length > 0) {
-      const error = new Error(`${name}: ${errors.length} rollback(s) failed`);
+      const error = new RunsheetError('ROLLBACK', `${name}: ${errors.length} rollback(s) failed`);
       error.cause = errors;
       throw error;
     }

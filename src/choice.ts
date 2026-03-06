@@ -31,17 +31,15 @@ type BranchProvides<T> = T extends readonly [unknown, infer S extends Step]
 // Normalize args: convert trailing bare step into a [() => true, step] tuple
 // ---------------------------------------------------------------------------
 
+type NormalizedBranch = readonly [(ctx: Readonly<StepContext>) => boolean, Step];
+
 function normalizeBranches(
   args: readonly (BranchTuple | TypedStep)[],
-): readonly (readonly [(ctx: Readonly<StepContext>) => boolean, Step])[] {
-  return args.map((arg) => {
-    if (Array.isArray(arg))
-      return arg as unknown as readonly [(ctx: Readonly<StepContext>) => boolean, Step];
+): readonly NormalizedBranch[] {
+  return args.map((arg): NormalizedBranch => {
+    if (Array.isArray(arg)) return arg as unknown as NormalizedBranch;
     // Bare step → default branch
-    return [() => true, arg] as const as unknown as readonly [
-      (ctx: Readonly<StepContext>) => boolean,
-      Step,
-    ];
+    return [() => true, arg as Step];
   });
 }
 
@@ -122,7 +120,7 @@ export function choice(...args: (BranchTuple | TypedStep)[]): TypedStep<StepCont
         const message = err instanceof Error ? err.message : String(err);
         const error = new RunsheetError('PREDICATE', `${name} predicate: ${message}`);
         if (err instanceof Error) error.cause = err;
-        return { success: false as const, errors: [error] };
+        return { success: false, errors: [error] };
       }
 
       if (!matches) continue;
@@ -131,28 +129,28 @@ export function choice(...args: (BranchTuple | TypedStep)[]): TypedStep<StepCont
       if (!result.success) return result;
 
       // Track which branch ran for rollback
-      branchMap.set(result.data as object, i);
+      branchMap.set(result.data, i);
 
-      return { success: true as const, data: result.data, errors: [] as [] };
+      return { success: true, data: result.data, errors: [] };
     }
 
     // No branch matched
     return {
-      success: false as const,
+      success: false,
       errors: [new RunsheetError('CHOICE_NO_MATCH', `${name}: no branch matched`)],
     };
   };
 
   // Rollback: only the matched branch needs rollback.
   const rollback: NonNullable<Step['rollback']> = async (ctx, output) => {
-    const branchIndex = branchMap.get(output as object);
+    const branchIndex = branchMap.get(output);
     if (branchIndex === undefined) return;
     const [, step] = innerBranches[branchIndex];
     if (step.rollback) {
       try {
         await step.rollback(ctx, output);
       } catch (err) {
-        const error = new Error(`${name}: 1 rollback(s) failed`);
+        const error = new RunsheetError('ROLLBACK', `${name}: 1 rollback(s) failed`);
         error.cause = [err instanceof Error ? err : new Error(String(err))];
         throw error;
       }

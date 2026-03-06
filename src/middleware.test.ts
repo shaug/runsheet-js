@@ -45,7 +45,7 @@ describe('middleware', () => {
     const executedSteps: string[] = [];
 
     const skipAll: StepMiddleware = () => async () => {
-      return { success: true as const, data: { skipped: true }, errors: [] as [] };
+      return { success: true, data: { skipped: true }, errors: [] };
     };
 
     const tracked = defineStep({

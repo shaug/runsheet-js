@@ -17,7 +17,7 @@ function withTimeout(
     const timeout = new Promise<Result<StepOutput>>((resolve) => {
       timer = setTimeout(() => {
         const error = new RunsheetError('TIMEOUT', `${stepName} timed out after ${ms}ms`);
-        resolve({ success: false as const, errors: [error] });
+        resolve({ success: false, errors: [error] });
       }, ms);
     });
     try {
@@ -59,7 +59,7 @@ function withRetry(
       'RETRY_EXHAUSTED',
       `${stepName} failed after ${policy.count} retries`,
     );
-    return { success: false as const, errors: [...lastResult.errors, error] };
+    return { success: false, errors: [...lastResult.errors, error] };
   };
 }
 
@@ -136,10 +136,7 @@ export function defineStep<Requires extends StepContext, Provides extends StepCo
     run: wrappedRun as unknown as Step['run'],
     rollback: config.rollback
       ? async (ctx: Readonly<StepContext>, output: Readonly<StepContext>) => {
-          await (config.rollback as NonNullable<typeof config.rollback>)(
-            ctx as Readonly<Requires>,
-            output as Readonly<Provides>,
-          );
+          await config.rollback!(ctx as Readonly<Requires>, output as Readonly<Provides>);
         }
       : undefined,
     retry: config.retry ?? undefined,

@@ -191,7 +191,7 @@ function pipelineFailure(
   rollback: RollbackReport,
 ): PipelineFailure {
   return Object.freeze({
-    success: false as const,
+    success: false,
     errors,
     meta: Object.freeze({
       pipeline: pipelineName,
@@ -210,7 +210,7 @@ function pipelineSuccess(
   state: ExecutionState,
 ): PipelineSuccess<StepContext> {
   return Object.freeze({
-    success: true as const,
+    success: true,
     data: state.context,
     errors: [] as [],
     meta: Object.freeze({
@@ -238,7 +238,7 @@ function createStepExecutor(
       'REQUIRES_VALIDATION',
     );
     if (!requiresCheck.success) {
-      return { success: false as const, errors: requiresCheck.errors };
+      return { success: false, errors: requiresCheck.errors };
     }
 
     // Execute step run
@@ -253,13 +253,13 @@ function createStepExecutor(
       'PROVIDES_VALIDATION',
     );
     if (!providesCheck.success) {
-      return { success: false as const, errors: providesCheck.errors };
+      return { success: false, errors: providesCheck.errors };
     }
 
     return {
-      success: true as const,
-      data: providesCheck.data as StepOutput,
-      errors: [] as [],
+      success: true,
+      data: providesCheck.data,
+      errors: [],
     };
   };
 }
