@@ -21,7 +21,8 @@ export type RunsheetErrorCode =
   | 'PREDICATE'
   | 'TIMEOUT'
   | 'RETRY_EXHAUSTED'
-  | 'STRICT_OVERLAP';
+  | 'STRICT_OVERLAP'
+  | 'CHOICE_NO_MATCH';
 
 /**
  * Base error class for all errors produced by the runsheet library.

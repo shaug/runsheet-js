@@ -219,6 +219,30 @@ inner steps are rolled back before the error propagates. Inner steps retain
 their own requires/provides validation, retry, and timeout. Conditional steps
 (when()) work inside parallel().
 
+### choice (branching)
+
+```typescript
+import { choice } from 'runsheet';
+
+const pipeline = buildPipeline({
+  name: 'checkout',
+  steps: [
+    validateOrder,
+    choice(
+      [(ctx) => ctx.method === 'card', chargeCard],
+      [(ctx) => ctx.method === 'bank', chargeBankTransfer],
+      [() => true, chargeDefault], // default
+    ),
+    sendConfirmation,
+  ],
+});
+```
+
+Predicates are evaluated in order — first match wins. Use `[() => true, step]`
+as the last branch for a default/catch-all. If no predicate matches, the step
+fails with RunsheetError code 'CHOICE_NO_MATCH'. Only the matched branch
+participates in rollback.
+
 ### Dependency injection
 
 Pass dependencies as pipeline args — they're available to every step through the
@@ -326,18 +350,19 @@ RunsheetError instances with a discriminated `code` property:
 - REQUIRES_VALIDATION — step's requires schema failed
 - PROVIDES_VALIDATION — step's provides schema failed
 - ARGS_VALIDATION — pipeline argsSchema failed
-- PREDICATE — when() predicate threw
+- PREDICATE — when() or choice() predicate threw
 - TIMEOUT — step exceeded its timeout
 - RETRY_EXHAUSTED — step failed after all retry attempts
 - STRICT_OVERLAP — two steps provide the same key (strict mode, build time)
+- CHOICE_NO_MATCH — no branch matched in a choice() step
 
 Application errors (thrown from step run functions) pass through as-is.
 
 ## Key exports
 
-Functions: defineStep, buildPipeline, createPipeline, when, parallel Classes:
-RunsheetError Types: Step, TypedStep, StepConfig, RetryPolicy, Pipeline,
-PipelineBuilder, PipelineResult, PipelineSuccess, PipelineFailure,
+Functions: defineStep, buildPipeline, createPipeline, when, parallel, choice
+Classes: RunsheetError Types: Step, TypedStep, StepConfig, RetryPolicy,
+Pipeline, PipelineBuilder, PipelineResult, PipelineSuccess, PipelineFailure,
 PipelineExecutionMeta, RollbackReport, RollbackFailure, StepMiddleware,
 StepInfo, StepExecutor, ConditionalStep, RunsheetErrorCode, Result, Success,
 Failure

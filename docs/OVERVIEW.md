@@ -200,18 +200,16 @@ return { completed, failed }
 | Rollback               | `def rollback` (trust-based) | Snapshot-verified rollback            | Not supported         | Stage rollback             |
 | Middleware             | Not built-in                 | Built-in                              | `map`/`catchFailure`  | Express-style              |
 | Conditional steps      | `if:`/`unless:` lambdas      | `when(predicate, step)`               | Not built-in          | Not built-in               |
+| Branching              | Not supported                | `choice([pred, step], ...)`           | Not built-in          | Not built-in               |
 | Result pattern         | `.result()` / `.call()`      | `Result<T>` from composable-functions | `Result<T>`           | Throws `PipelineError`     |
 | Type safety            | Runtime (Ruby)               | Compile-time + optional runtime       | Compile-time          | Compile-time               |
 | Parallel composition   | Not supported                | `parallel(a, b, ...)`                 | `all()` / `collect()` | Not supported              |
 
 ## Future work
 
-- **Branching, mapping, and filtering** — leverage more of
-  [composable-functions]' composition primitives to support richer control flow
-  beyond sequential execution. Think branching on context values, mapping over
-  collections, or filtering steps dynamically — moving toward the expressiveness
-  of [AWS Step Functions] but with type-safe, code-first ergonomics instead of
-  YAML configuration.
+- **Mapping and filtering** — `map()` for iterating over collections (like AWS
+  Step Functions Map state), and dynamic step filtering — continuing toward the
+  expressiveness of [AWS Step Functions] with type-safe, code-first ergonomics.
 
 <!-- Reference links — please keep alphabetized -->
 

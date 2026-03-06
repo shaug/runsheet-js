@@ -344,6 +344,33 @@ them. TypeScript enforces at compile time that every step's `requires` are
 satisfied by the accumulated context. For testing, swap in mocks at the call
 site.
 
+## Choice (branching)
+
+Execute the first branch whose predicate returns `true` — like an AWS Step
+Functions Choice state:
+
+```typescript
+import { choice } from 'runsheet';
+
+const placeOrder = buildPipeline({
+  name: 'placeOrder',
+  steps: [
+    validateOrder,
+    choice(
+      [(ctx) => ctx.method === 'card', chargeCard],
+      [(ctx) => ctx.method === 'bank', chargeBankTransfer],
+      [() => true, chargeDefault], // default
+    ),
+    sendConfirmation,
+  ],
+});
+```
+
+Predicates are evaluated in order — first match wins. Use `[() => true, step]`
+as the last branch for a default/catch-all. If no predicate matches, the step
+fails with a `CHOICE_NO_MATCH` error. Only the matched branch participates in
+rollback.
+
 ## Rollback
 
 When a step fails, rollback handlers for all previously completed steps execute
@@ -457,6 +484,12 @@ createPipeline('order', z.object({ id: z.string() }), { strict: true });
 Run steps concurrently and merge their outputs. Returns a single step usable
 anywhere a regular step is accepted. On partial failure, succeeded inner steps
 are rolled back before the error propagates. p
+
+### `choice(...branches)`
+
+Execute the first branch whose predicate returns `true`. Each branch is a
+`[predicate, step]` tuple. Returns a single step usable anywhere a regular step
+is accepted. Only the matched branch participates in rollback.
 
 ### `when(predicate, step)`
 
