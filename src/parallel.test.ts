@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, pipeline, parallel, when, RunsheetError } from './index.js';
+import { step, pipeline, parallel, when, RunsheetError } from './index.js';
 
 describe('parallel', () => {
-  const stepA = defineStep({
+  const stepA = step({
     name: 'stepA',
     provides: z.object({ a: z.string() }),
     run: async () => ({ a: 'hello' }),
   });
 
-  const stepB = defineStep({
+  const stepB = step({
     name: 'stepB',
     provides: z.object({ b: z.number() }),
     run: async () => ({ b: 42 }),
@@ -17,12 +17,9 @@ describe('parallel', () => {
 
   describe('basic execution', () => {
     it('runs steps concurrently and merges outputs', async () => {
-      const p = pipeline({
-        name: 'test',
-        steps: [parallel(stepA, stepB)],
-      });
+      const par = parallel(stepA, stepB);
 
-      const result = await p.run({});
+      const result = await par.run({});
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data).toEqual({ a: 'hello', b: 42 });
@@ -30,7 +27,7 @@ describe('parallel', () => {
     });
 
     it('works within a sequential pipeline', async () => {
-      const stepC = defineStep({
+      const stepC = step({
         name: 'stepC',
         requires: z.object({ a: z.string(), b: z.number() }),
         provides: z.object({ c: z.boolean() }),
@@ -62,7 +59,7 @@ describe('parallel', () => {
     it('actually runs concurrently', async () => {
       const order: string[] = [];
 
-      const slow = defineStep({
+      const slow = step({
         name: 'slow',
         provides: z.object({ slow: z.boolean() }),
         run: async () => {
@@ -73,7 +70,7 @@ describe('parallel', () => {
         },
       });
 
-      const fast = defineStep({
+      const fast = step({
         name: 'fast',
         provides: z.object({ fast: z.boolean() }),
         run: async () => {
@@ -84,12 +81,9 @@ describe('parallel', () => {
         },
       });
 
-      const p = pipeline({
-        name: 'test',
-        steps: [parallel(slow, fast)],
-      });
+      const par = parallel(slow, fast);
 
-      await p.run({});
+      await par.run({});
       // Both start before either ends
       expect(order.indexOf('fast-start')).toBeLessThan(order.indexOf('slow-end'));
     });
@@ -97,19 +91,16 @@ describe('parallel', () => {
 
   describe('failure handling', () => {
     it('returns failure when an inner step fails', async () => {
-      const failing = defineStep({
+      const failing = step({
         name: 'failing',
         run: async () => {
           throw new Error('boom');
         },
       });
 
-      const p = pipeline({
-        name: 'test',
-        steps: [parallel(stepA, failing)],
-      });
+      const par = parallel(stepA, failing);
 
-      const result = await p.run({});
+      const result = await par.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.failedStep).toBe('parallel(stepA, failing)');
@@ -118,19 +109,16 @@ describe('parallel', () => {
     });
 
     it('validates inner step requires', async () => {
-      const needsName = defineStep({
+      const needsName = step({
         name: 'needsName',
         requires: z.object({ name: z.string() }),
         provides: z.object({ greeting: z.string() }),
         run: async (ctx) => ({ greeting: `Hi ${ctx.name}` }),
       });
 
-      const p = pipeline({
-        name: 'test',
-        steps: [parallel(needsName)],
-      });
+      const par = parallel(needsName);
 
-      const result = await p.run({});
+      const result = await par.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -139,19 +127,16 @@ describe('parallel', () => {
     });
 
     it('validates inner step provides', async () => {
-      const badProvides = defineStep({
+      const badProvides = step({
         name: 'badProvides',
         provides: z.object({ count: z.number() }),
         // @ts-expect-error — intentionally returning wrong type
         run: async () => ({ count: 'not a number' }),
       });
 
-      const p = pipeline({
-        name: 'test',
-        steps: [parallel(badProvides)],
-      });
+      const par = parallel(badProvides);
 
-      const result = await p.run({});
+      const result = await par.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -164,7 +149,7 @@ describe('parallel', () => {
     it('rolls back succeeded inner steps on partial failure', async () => {
       const rolledBack: string[] = [];
 
-      const succeeds = defineStep({
+      const succeeds = step({
         name: 'succeeds',
         provides: z.object({ x: z.number() }),
         run: async () => ({ x: 1 }),
@@ -173,7 +158,7 @@ describe('parallel', () => {
         },
       });
 
-      const fails = defineStep({
+      const fails = step({
         name: 'fails',
         run: async () => {
           // Delay so succeeds finishes first
@@ -182,12 +167,9 @@ describe('parallel', () => {
         },
       });
 
-      const p = pipeline({
-        name: 'test',
-        steps: [parallel(succeeds, fails)],
-      });
+      const par = parallel(succeeds, fails);
 
-      const result = await p.run({});
+      const result = await par.run({});
       expect(result.success).toBe(false);
       expect(rolledBack).toEqual(['succeeds']);
     });
@@ -195,7 +177,7 @@ describe('parallel', () => {
     it('rolls back all inner steps when a later sequential step fails', async () => {
       const rolledBack: string[] = [];
 
-      const withRollbackA = defineStep({
+      const withRollbackA = step({
         name: 'withRollbackA',
         provides: z.object({ a: z.number() }),
         run: async () => ({ a: 1 }),
@@ -204,7 +186,7 @@ describe('parallel', () => {
         },
       });
 
-      const withRollbackB = defineStep({
+      const withRollbackB = step({
         name: 'withRollbackB',
         provides: z.object({ b: z.number() }),
         run: async () => ({ b: 2 }),
@@ -213,7 +195,7 @@ describe('parallel', () => {
         },
       });
 
-      const laterFails = defineStep({
+      const laterFails = step({
         name: 'laterFails',
         run: async () => {
           throw new Error('later fail');
@@ -236,7 +218,7 @@ describe('parallel', () => {
 
       const skipped = when(
         () => false,
-        defineStep({
+        step({
           name: 'skipped',
           provides: z.object({ x: z.number() }),
           run: async () => ({ x: 1 }),
@@ -246,7 +228,7 @@ describe('parallel', () => {
         }),
       );
 
-      const ran = defineStep({
+      const ran = step({
         name: 'ran',
         provides: z.object({ y: z.number() }),
         run: async () => ({ y: 2 }),
@@ -255,7 +237,7 @@ describe('parallel', () => {
         },
       });
 
-      const laterFails = defineStep({
+      const laterFails = step({
         name: 'laterFails',
         run: async () => {
           throw new Error('later fail');
@@ -276,7 +258,7 @@ describe('parallel', () => {
     it('handles inner rollback errors (best-effort)', async () => {
       const rolledBack: string[] = [];
 
-      const step1 = defineStep({
+      const step1 = step({
         name: 'step1',
         provides: z.object({ x: z.number() }),
         run: async () => ({ x: 1 }),
@@ -285,7 +267,7 @@ describe('parallel', () => {
         },
       });
 
-      const step2 = defineStep({
+      const step2 = step({
         name: 'step2',
         provides: z.object({ y: z.number() }),
         run: async () => ({ y: 2 }),
@@ -294,7 +276,7 @@ describe('parallel', () => {
         },
       });
 
-      const step3 = defineStep({
+      const step3 = step({
         name: 'step3',
         provides: z.object({ z: z.number() }),
         run: async () => ({ z: 3 }),
@@ -303,7 +285,7 @@ describe('parallel', () => {
         },
       });
 
-      const laterFails = defineStep({
+      const laterFails = step({
         name: 'laterFails',
         run: async () => {
           throw new Error('fail');
@@ -325,7 +307,7 @@ describe('parallel', () => {
 
   describe('conditional steps', () => {
     it('evaluates when() predicates inside parallel', async () => {
-      const alwaysRun = defineStep({
+      const alwaysRun = step({
         name: 'alwaysRun',
         provides: z.object({ ran: z.boolean() }),
         run: async () => ({ ran: true }),
@@ -333,19 +315,16 @@ describe('parallel', () => {
 
       const conditional = when(
         () => false,
-        defineStep({
+        step({
           name: 'conditional',
           provides: z.object({ skipped: z.boolean() }),
           run: async () => ({ skipped: false }),
         }),
       );
 
-      const p = pipeline({
-        name: 'test',
-        steps: [parallel(alwaysRun, conditional)],
-      });
+      const par = parallel(alwaysRun, conditional);
 
-      const result = await p.run({});
+      const result = await par.run({});
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data).toEqual({ ran: true });
@@ -358,18 +337,15 @@ describe('parallel', () => {
         () => {
           throw new Error('predicate boom');
         },
-        defineStep({
+        step({
           name: 'bad',
           run: async () => ({}),
         }),
       );
 
-      const p = pipeline({
-        name: 'test',
-        steps: [parallel(bad)],
-      });
+      const par = parallel(bad);
 
-      const result = await p.run({});
+      const result = await par.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -380,13 +356,10 @@ describe('parallel', () => {
 
   describe('metadata', () => {
     it('uses a descriptive step name', async () => {
-      const p = pipeline({
-        name: 'test',
-        steps: [parallel(stepA, stepB)],
-      });
+      const par = parallel(stepA, stepB);
 
-      const result = await p.run({});
-      expect(result.meta.stepsExecuted).toEqual(['parallel(stepA, stepB)']);
+      const result = await par.run({});
+      expect(result.meta.name).toBe('parallel(stepA, stepB)');
     });
 
     it('reports inner steps executed in its own aggregate meta', async () => {
@@ -401,7 +374,7 @@ describe('parallel', () => {
 
   describe('inner step features', () => {
     it('inner steps retain timeout behavior', async () => {
-      const slow = defineStep({
+      const slow = step({
         name: 'slow',
         timeout: 10,
         run: async () => {
@@ -410,12 +383,9 @@ describe('parallel', () => {
         },
       });
 
-      const p = pipeline({
-        name: 'test',
-        steps: [parallel(slow)],
-      });
+      const par = parallel(slow);
 
-      const result = await p.run({});
+      const result = await par.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);

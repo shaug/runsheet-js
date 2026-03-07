@@ -18,7 +18,7 @@ import type { PipelineBuilder } from './builder.js';
 // declarations — they're available by the time any function is called.
 import { makeBuilder } from './builder.js';
 import { applyMiddleware } from './middleware.js';
-import { ArgsValidationError, PredicateError, StrictOverlapError } from './errors.js';
+import { ArgsValidationError, RollbackError, StrictOverlapError } from './errors.js';
 import {
   toError,
   aggregateMeta,
@@ -27,7 +27,7 @@ import {
   formatIssues,
   createStepObject,
 } from './internal.js';
-import { isConditionalStep } from './when.js';
+import { wasSkipped } from './when.js';
 
 // ---------------------------------------------------------------------------
 // Pipeline configuration
@@ -182,20 +182,6 @@ async function executePipeline(
   const middlewares = config.middleware ?? [];
 
   for (const step of config.steps) {
-    // Evaluate conditional predicate
-    try {
-      if (isConditionalStep(step) && !step.predicate(state.context)) {
-        continue;
-      }
-    } catch (err) {
-      const cause = toError(err);
-      const error = new PredicateError(`${step.name} predicate: ${cause.message}`);
-      error.cause = cause;
-      const rollback = await executeRollback(state.executed);
-      const meta = aggregateMeta(config.name, frozenArgs, [...state.stepsExecuted]);
-      return { result: aggregateFailure(error, meta, step.name, rollback), state };
-    }
-
     // Snapshot pre-step context
     const snapshot = state.context;
 
@@ -225,6 +211,9 @@ async function executePipeline(
       const meta = aggregateMeta(config.name, frozenArgs, [...state.stepsExecuted]);
       return { result: aggregateFailure(result.error, meta, step.name, rollback), state };
     }
+
+    // Skip tracking for steps that didn't execute (e.g., when() with false predicate)
+    if (wasSkipped(result.meta)) continue;
 
     // Track and accumulate
     const output = result.data;
@@ -269,11 +258,19 @@ export function buildPipelineStep<Args extends StepContext, S extends Step>(conf
     return outcome.result;
   };
 
+  // Rollback: called when a later outer step fails.
+  // The thrown RollbackError is intentional — the pipeline's own
+  // executeRollback loop catches it and records it in result.rollback.failed.
   const rollback = async (_ctx: Readonly<StepContext>, output: Readonly<StepOutput>) => {
     const state = stateMap.get(output);
-    if (state) {
-      stateMap.delete(output);
-      await executeRollback(state.executed);
+    if (!state) return;
+    stateMap.delete(output);
+    const report = await executeRollback(state.executed);
+    if (report.failed.length > 0) {
+      throw new RollbackError(
+        `${config.name}: ${report.failed.length} rollback(s) failed`,
+        report.failed.map((f) => f.error),
+      );
     }
   };
 

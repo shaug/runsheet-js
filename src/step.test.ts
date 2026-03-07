@@ -1,26 +1,26 @@
 import { describe, expect, it, assertType } from 'vitest';
 import { z } from 'zod';
 import type { StepResult } from './index.js';
-import { defineStep, pipeline, RunsheetError } from './index.js';
+import { step, RunsheetError } from './index.js';
 
-describe('defineStep', () => {
+describe('step', () => {
   describe('with schemas', () => {
     it('creates a step with requires and provides schemas', () => {
-      const step = defineStep({
+      const s = step({
         name: 'charge',
         requires: z.object({ amount: z.number() }),
         provides: z.object({ chargeId: z.string() }),
         run: async (ctx) => ({ chargeId: `ch_${ctx.amount}` }),
       });
 
-      expect(step.name).toBe('charge');
-      expect(step.requires).toBeDefined();
-      expect(step.provides).toBeDefined();
-      expect(step.rollback).toBeUndefined();
+      expect(s.name).toBe('charge');
+      expect(s.requires).toBeDefined();
+      expect(s.provides).toBeDefined();
+      expect(s.rollback).toBeUndefined();
     });
 
     it('creates a step with rollback', () => {
-      const step = defineStep({
+      const s = step({
         name: 'charge',
         requires: z.object({ amount: z.number() }),
         provides: z.object({ chargeId: z.string() }),
@@ -28,11 +28,11 @@ describe('defineStep', () => {
         rollback: async () => {},
       });
 
-      expect(step.rollback).toBeDefined();
+      expect(s.rollback).toBeDefined();
     });
 
     it('infers types from Zod schemas', () => {
-      const step = defineStep({
+      const s = step({
         name: 'typed',
         requires: z.object({ name: z.string(), age: z.number() }),
         provides: z.object({ greeting: z.string() }),
@@ -41,35 +41,35 @@ describe('defineStep', () => {
         },
       });
 
-      expect(step.name).toBe('typed');
+      expect(s.name).toBe('typed');
     });
 
     it('creates a step with only requires schema', () => {
-      const step = defineStep({
+      const s = step({
         name: 'validate',
         requires: z.object({ email: z.string().email() }),
         run: async () => ({ validated: true }),
       });
 
-      expect(step.requires).toBeDefined();
-      expect(step.provides).toBeUndefined();
+      expect(s.requires).toBeDefined();
+      expect(s.provides).toBeUndefined();
     });
 
     it('creates a step with only provides schema', () => {
-      const step = defineStep({
+      const s = step({
         name: 'init',
         provides: z.object({ startedAt: z.date() }),
         run: async () => ({ startedAt: new Date() }),
       });
 
-      expect(step.requires).toBeUndefined();
-      expect(step.provides).toBeDefined();
+      expect(s.requires).toBeUndefined();
+      expect(s.provides).toBeDefined();
     });
   });
 
   describe('with generics only', () => {
     it('creates a step without runtime schemas', () => {
-      const step = defineStep<{ order: { id: string } }, { loggedAt: Date }>({
+      const s = step<{ order: { id: string } }, { loggedAt: Date }>({
         name: 'log',
         run: async (ctx) => {
           void ctx.order.id;
@@ -77,22 +77,22 @@ describe('defineStep', () => {
         },
       });
 
-      expect(step.name).toBe('log');
-      expect(step.requires).toBeUndefined();
-      expect(step.provides).toBeUndefined();
+      expect(s.name).toBe('log');
+      expect(s.requires).toBeUndefined();
+      expect(s.provides).toBeUndefined();
     });
   });
 
   describe('run wrapping', () => {
     it('returns a success StepResult on success', async () => {
-      const step = defineStep({
+      const s = step({
         name: 'add',
         requires: z.object({ a: z.number() }),
         provides: z.object({ sum: z.number() }),
         run: async (ctx) => ({ sum: ctx.a + 1 }),
       });
 
-      const result = await step.run({ a: 5 });
+      const result = await s.run({ a: 5 });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data).toEqual({ sum: 6 });
@@ -101,7 +101,7 @@ describe('defineStep', () => {
     });
 
     it('returns a failure StepResult when run throws', async () => {
-      const step = defineStep({
+      const s = step({
         name: 'fail',
         requires: z.object({ a: z.number() }),
         provides: z.object({ result: z.string() }),
@@ -110,7 +110,7 @@ describe('defineStep', () => {
         },
       });
 
-      const result = await step.run({ a: 1 });
+      const result = await s.run({ a: 1 });
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.message).toBe('step failed');
@@ -118,14 +118,14 @@ describe('defineStep', () => {
     });
 
     it('supports synchronous run functions', async () => {
-      const step = defineStep({
+      const s = step({
         name: 'sync',
         requires: z.object({ x: z.number() }),
         provides: z.object({ doubled: z.number() }),
         run: (ctx) => ({ doubled: ctx.x * 2 }),
       });
 
-      const result = await step.run({ x: 3 });
+      const result = await s.run({ x: 3 });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data).toEqual({ doubled: 6 });
@@ -133,13 +133,13 @@ describe('defineStep', () => {
     });
 
     it('validates requires and returns failure on mismatch', async () => {
-      const step = defineStep({
+      const s = step({
         name: 'needsName',
         requires: z.object({ name: z.string() }),
         run: async (ctx) => ({ greeting: `Hi ${ctx.name}` }),
       });
 
-      const result = await step.run({});
+      const result = await s.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -148,14 +148,14 @@ describe('defineStep', () => {
     });
 
     it('validates provides and returns failure on mismatch', async () => {
-      const step = defineStep({
+      const s = step({
         name: 'badProvides',
         provides: z.object({ count: z.number() }),
         // @ts-expect-error — intentionally returning wrong type for test
         run: async () => ({ count: 'not a number' }),
       });
 
-      const result = await step.run({});
+      const result = await s.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -166,14 +166,14 @@ describe('defineStep', () => {
 
   describe('type safety', () => {
     it('run returns a typed StepResult', async () => {
-      const step = defineStep({
+      const s = step({
         name: 'typed',
         requires: z.object({ a: z.number() }),
         provides: z.object({ sum: z.number() }),
         run: async (ctx) => ({ sum: ctx.a + 1 }),
       });
 
-      const result = await step.run({ a: 5 });
+      const result = await s.run({ a: 5 });
       assertType<StepResult<{ sum: number }>>(result);
       if (result.success) {
         assertType<{ sum: number }>(result.data);
@@ -181,17 +181,17 @@ describe('defineStep', () => {
     });
 
     it('step types are directly inspectable via standard TypeScript', () => {
-      const step = defineStep({
+      const s = step({
         name: 'test',
         requires: z.object({ name: z.string() }),
         provides: z.object({ greeting: z.string() }),
         run: async (ctx) => ({ greeting: `Hi ${ctx.name}` }),
       });
 
-      expect(step.name).toBe('test');
+      expect(s.name).toBe('test');
 
       assertType<(ctx: Readonly<{ name: string }>) => Promise<StepResult<{ greeting: string }>>>(
-        step.run,
+        s.run,
       );
     });
   });
@@ -199,7 +199,7 @@ describe('defineStep', () => {
   describe('retry', () => {
     it('retries on failure up to count times', async () => {
       let attempts = 0;
-      const step = defineStep({
+      const s = step({
         name: 'flaky',
         provides: z.object({ value: z.number() }),
         retry: { count: 2 },
@@ -210,14 +210,13 @@ describe('defineStep', () => {
         },
       });
 
-      const p = pipeline({ name: 'test', steps: [step] });
-      const result = await p.run({});
+      const result = await s.run({});
       expect(result.success).toBe(true);
       expect(attempts).toBe(3); // 1 initial + 2 retries
     });
 
     it('fails with RETRY_EXHAUSTED when all retries fail', async () => {
-      const step = defineStep({
+      const s = step({
         name: 'always-fails',
         retry: { count: 2 },
         run: async () => {
@@ -225,8 +224,7 @@ describe('defineStep', () => {
         },
       });
 
-      const p = pipeline({ name: 'test', steps: [step] });
-      const result = await p.run({});
+      const result = await s.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -235,9 +233,9 @@ describe('defineStep', () => {
       }
     });
 
-    it('attaches all attempt errors as cause on RetryExhaustedError', async () => {
+    it('attaches all attempt errors as AggregateError cause on RetryExhaustedError', async () => {
       let attempts = 0;
-      const step = defineStep({
+      const s = step({
         name: 'always-fails',
         retry: { count: 2 },
         run: async () => {
@@ -246,18 +244,34 @@ describe('defineStep', () => {
         },
       });
 
-      const p = pipeline({ name: 'test', steps: [step] });
-      const result = await p.run({});
+      const result = await s.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
         expect((result.error as RunsheetError).code).toBe('RETRY_EXHAUSTED');
-        const cause = result.error.cause as Error[];
-        expect(Array.isArray(cause)).toBe(true);
-        expect(cause).toHaveLength(3); // 1 initial + 2 retries
-        expect(cause[0].message).toBe('attempt 1');
-        expect(cause[1].message).toBe('attempt 2');
-        expect(cause[2].message).toBe('attempt 3');
+        const cause = result.error.cause as AggregateError;
+        expect(cause).toBeInstanceOf(AggregateError);
+        expect(cause.errors).toHaveLength(3); // 1 initial + 2 retries
+        expect(cause.errors[0].message).toBe('attempt 1');
+        expect(cause.errors[1].message).toBe('attempt 2');
+        expect(cause.errors[2].message).toBe('attempt 3');
+      }
+    });
+
+    it('attaches single error directly as cause when only one attempt', async () => {
+      const s = step({
+        name: 'fails-once',
+        retry: { count: 1, retryIf: () => true },
+        run: async () => {
+          throw new Error('only error');
+        },
+      });
+
+      const result = await s.run({});
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        // 1 initial + 1 retry = 2 errors → AggregateError
+        expect(result.error.cause).toBeInstanceOf(AggregateError);
       }
     });
 
@@ -268,7 +282,7 @@ describe('defineStep', () => {
         retryable = true;
       }
 
-      const step = defineStep({
+      const s = step({
         name: 'selective',
         retry: {
           count: 3,
@@ -281,8 +295,7 @@ describe('defineStep', () => {
         },
       });
 
-      const p = pipeline({ name: 'test', steps: [step] });
-      const result = await p.run({});
+      const result = await s.run({});
       expect(result.success).toBe(false);
       expect(attempts).toBe(2); // initial + 1 retry, then retryIf returned false
       if (!result.success) {
@@ -295,7 +308,7 @@ describe('defineStep', () => {
       let attempts = 0;
       const timestamps: number[] = [];
 
-      const step = defineStep({
+      const s = step({
         name: 'delayed',
         retry: { count: 2, delay: 50, backoff: 'linear' },
         run: async () => {
@@ -306,8 +319,7 @@ describe('defineStep', () => {
         },
       });
 
-      const p = pipeline({ name: 'test', steps: [step] });
-      await p.run({});
+      await s.run({});
 
       const gap1 = timestamps[1] - timestamps[0];
       const gap2 = timestamps[2] - timestamps[1];
@@ -319,7 +331,7 @@ describe('defineStep', () => {
       let attempts = 0;
       const timestamps: number[] = [];
 
-      const step = defineStep({
+      const s = step({
         name: 'exp-delayed',
         retry: { count: 2, delay: 50, backoff: 'exponential' },
         run: async () => {
@@ -330,8 +342,7 @@ describe('defineStep', () => {
         },
       });
 
-      const p = pipeline({ name: 'test', steps: [step] });
-      await p.run({});
+      await s.run({});
 
       const gap1 = timestamps[1] - timestamps[0];
       const gap2 = timestamps[2] - timestamps[1];
@@ -340,19 +351,19 @@ describe('defineStep', () => {
     });
 
     it('stores retry config on the step object', () => {
-      const step = defineStep({
+      const s = step({
         name: 'with-retry',
         retry: { count: 3, delay: 100, backoff: 'exponential' },
         run: async () => ({ done: true }),
       });
 
-      expect(step.retry).toEqual({ count: 3, delay: 100, backoff: 'exponential' });
+      expect(s.retry).toEqual({ count: 3, delay: 100, backoff: 'exponential' });
     });
   });
 
   describe('timeout', () => {
     it('fails with TIMEOUT when step exceeds timeout', async () => {
-      const step = defineStep({
+      const s = step({
         name: 'slow',
         timeout: 50,
         run: async () => {
@@ -361,8 +372,7 @@ describe('defineStep', () => {
         },
       });
 
-      const p = pipeline({ name: 'test', steps: [step] });
-      const result = await p.run({});
+      const result = await s.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -372,32 +382,31 @@ describe('defineStep', () => {
     });
 
     it('succeeds when step completes within timeout', async () => {
-      const step = defineStep({
+      const s = step({
         name: 'fast',
         timeout: 500,
         provides: z.object({ done: z.boolean() }),
         run: async () => ({ done: true }),
       });
 
-      const p = pipeline({ name: 'test', steps: [step] });
-      const result = await p.run({});
+      const result = await s.run({});
       expect(result.success).toBe(true);
     });
 
     it('stores timeout config on the step object', () => {
-      const step = defineStep({
+      const s = step({
         name: 'with-timeout',
         timeout: 5000,
         run: async () => ({ done: true }),
       });
 
-      expect(step.timeout).toBe(5000);
+      expect(s.timeout).toBe(5000);
     });
 
     it('timeout works together with retry', async () => {
       let attempts = 0;
 
-      const step = defineStep({
+      const s = step({
         name: 'timeout-retry',
         timeout: 50,
         retry: { count: 2 },
@@ -410,8 +419,7 @@ describe('defineStep', () => {
         },
       });
 
-      const p = pipeline({ name: 'test', steps: [step] });
-      const result = await p.run({});
+      const result = await s.run({});
       expect(result.success).toBe(true);
       expect(attempts).toBe(3);
     });
@@ -419,12 +427,12 @@ describe('defineStep', () => {
 
   describe('immutability', () => {
     it('step object is frozen', () => {
-      const step = defineStep({
+      const s = step({
         name: 'frozen',
         run: async () => ({ done: true }),
       });
 
-      expect(Object.isFrozen(step)).toBe(true);
+      expect(Object.isFrozen(s)).toBe(true);
     });
   });
 });

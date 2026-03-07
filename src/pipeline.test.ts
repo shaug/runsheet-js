@@ -1,23 +1,23 @@
 import { describe, expect, it, assertType } from 'vitest';
 import { z } from 'zod';
-import { defineStep, pipeline, parallel, RunsheetError } from './index.js';
+import { step, pipeline, parallel, RunsheetError, RollbackError } from './index.js';
 import type { StepResult } from './index.js';
 
 describe('pipeline', () => {
-  const stepA = defineStep({
+  const stepA = step({
     name: 'stepA',
     provides: z.object({ a: z.string() }),
     run: async () => ({ a: 'hello' }),
   });
 
-  const stepB = defineStep({
+  const stepB = step({
     name: 'stepB',
     requires: z.object({ a: z.string() }),
     provides: z.object({ b: z.number() }),
     run: async (ctx) => ({ b: ctx.a.length }),
   });
 
-  const stepC = defineStep({
+  const stepC = step({
     name: 'stepC',
     requires: z.object({ a: z.string(), b: z.number() }),
     provides: z.object({ c: z.boolean() }),
@@ -39,7 +39,7 @@ describe('pipeline', () => {
     });
 
     it('includes initial args in accumulated context', async () => {
-      const step = defineStep({
+      const greet = step({
         name: 'greet',
         requires: z.object({ name: z.string() }),
         provides: z.object({ greeting: z.string() }),
@@ -48,7 +48,7 @@ describe('pipeline', () => {
 
       const p = pipeline({
         name: 'test',
-        steps: [step],
+        steps: [greet],
       });
 
       const result = await p.run({ name: 'Alice' });
@@ -59,13 +59,13 @@ describe('pipeline', () => {
     });
 
     it('later step output overwrites earlier keys (last writer wins)', async () => {
-      const first = defineStep({
+      const first = step({
         name: 'first',
         provides: z.object({ status: z.string() }),
         run: async () => ({ status: 'pending' }),
       });
 
-      const second = defineStep({
+      const second = step({
         name: 'second',
         provides: z.object({ status: z.string() }),
         run: async () => ({ status: 'done' }),
@@ -86,7 +86,7 @@ describe('pipeline', () => {
 
   describe('schema validation', () => {
     it('fails when requires schema is not satisfied', async () => {
-      const needsName = defineStep({
+      const needsName = step({
         name: 'needsName',
         requires: z.object({ name: z.string() }),
         provides: z.object({ greeting: z.string() }),
@@ -109,7 +109,7 @@ describe('pipeline', () => {
     });
 
     it('fails when provides schema is not satisfied', async () => {
-      const badProvides = defineStep({
+      const badProvides = step({
         name: 'badProvides',
         provides: z.object({ count: z.number() }),
         // @ts-expect-error — intentionally returning wrong type for test
@@ -135,7 +135,7 @@ describe('pipeline', () => {
   describe('context immutability', () => {
     it('step receives frozen context', async () => {
       let wasFrozen = false;
-      const checkFreeze = defineStep({
+      const checkFreeze = step({
         name: 'checkFreeze',
         run: async (ctx) => {
           wasFrozen = Object.isFrozen(ctx);
@@ -179,7 +179,7 @@ describe('pipeline', () => {
     });
 
     it('includes metadata on failure', async () => {
-      const failStep = defineStep({
+      const failStep = step({
         name: 'failStep',
         run: async () => {
           throw new Error('boom');
@@ -204,7 +204,7 @@ describe('pipeline', () => {
     it('stops pipeline on step failure', async () => {
       const calls: string[] = [];
 
-      const a = defineStep({
+      const a = step({
         name: 'a',
         run: async () => {
           calls.push('a');
@@ -212,7 +212,7 @@ describe('pipeline', () => {
         },
       });
 
-      const b = defineStep({
+      const b = step({
         name: 'b',
         run: async () => {
           calls.push('b');
@@ -220,7 +220,7 @@ describe('pipeline', () => {
         },
       });
 
-      const c = defineStep({
+      const c = step({
         name: 'c',
         run: async () => {
           calls.push('c');
@@ -241,7 +241,7 @@ describe('pipeline', () => {
 
   describe('argsSchema validation', () => {
     it('validates pipeline input when argsSchema is provided', async () => {
-      const step = defineStep({
+      const greet = step({
         name: 'greet',
         requires: z.object({ name: z.string() }),
         provides: z.object({ greeting: z.string() }),
@@ -250,7 +250,7 @@ describe('pipeline', () => {
 
       const p = pipeline({
         name: 'test',
-        steps: [step],
+        steps: [greet],
         argsSchema: z.object({ name: z.string() }),
       });
 
@@ -287,13 +287,13 @@ describe('pipeline', () => {
 
   describe('mixed sync and async steps', () => {
     it('handles sync and async run functions in the same pipeline', async () => {
-      const syncStep = defineStep({
+      const syncStep = step({
         name: 'sync',
         provides: z.object({ a: z.number() }),
         run: () => ({ a: 1 }),
       });
 
-      const asyncStep = defineStep({
+      const asyncStep = step({
         name: 'async',
         requires: z.object({ a: z.number() }),
         provides: z.object({ b: z.number() }),
@@ -315,7 +315,7 @@ describe('pipeline', () => {
 
   describe('non-Error exceptions', () => {
     it('handles string thrown from step run', async () => {
-      const step = defineStep({
+      const throwsString = step({
         name: 'throws-string',
         run: async () => {
           throw 'something went wrong';
@@ -324,7 +324,7 @@ describe('pipeline', () => {
 
       const p = pipeline({
         name: 'test',
-        steps: [step],
+        steps: [throwsString],
       });
 
       const result = await p.run({});
@@ -351,13 +351,13 @@ describe('pipeline', () => {
 
   describe('strict mode', () => {
     it('throws when two steps provide the same key', () => {
-      const first = defineStep({
+      const first = step({
         name: 'first',
         provides: z.object({ status: z.string() }),
         run: async () => ({ status: 'pending' }),
       });
 
-      const second = defineStep({
+      const second = step({
         name: 'second',
         provides: z.object({ status: z.string() }),
         run: async () => ({ status: 'done' }),
@@ -385,7 +385,7 @@ describe('pipeline', () => {
     });
 
     it('skips steps without provides schemas', () => {
-      const noProvides = defineStep({
+      const noProvides = step({
         name: 'noProvides',
         run: async () => ({ x: 1 }),
       });
@@ -396,13 +396,13 @@ describe('pipeline', () => {
     });
 
     it('allows overlap when strict is not set', () => {
-      const first = defineStep({
+      const first = step({
         name: 'first',
         provides: z.object({ status: z.string() }),
         run: async () => ({ status: 'pending' }),
       });
 
-      const second = defineStep({
+      const second = step({
         name: 'second',
         provides: z.object({ status: z.string() }),
         run: async () => ({ status: 'done' }),
@@ -430,7 +430,7 @@ describe('pipeline', () => {
         steps: [stepA, stepB],
       });
 
-      const stepD = defineStep({
+      const stepD = step({
         name: 'stepD',
         requires: z.object({ b: z.number() }),
         provides: z.object({ d: z.string() }),
@@ -456,7 +456,7 @@ describe('pipeline', () => {
     it('handles reentrancy — parallel pipelines roll back independently', async () => {
       const rolledBack: string[] = [];
 
-      const a = defineStep({
+      const a = step({
         name: 'a',
         provides: z.object({ a: z.number() }),
         run: async () => ({ a: 1 }),
@@ -465,7 +465,7 @@ describe('pipeline', () => {
         },
       });
 
-      const b = defineStep({
+      const b = step({
         name: 'b',
         provides: z.object({ b: z.number() }),
         run: async () => ({ b: 2 }),
@@ -481,7 +481,7 @@ describe('pipeline', () => {
 
       // Run two instances of the same pipeline step in parallel,
       // then trigger rollback. Both instances should roll back.
-      const fails = defineStep({
+      const fails = step({
         name: 'fails',
         run: async () => {
           throw new Error('outer fail');
@@ -503,7 +503,7 @@ describe('pipeline', () => {
     it('rolls back inner pipeline steps when a later outer step fails', async () => {
       const rolledBack: string[] = [];
 
-      const a = defineStep({
+      const a = step({
         name: 'a',
         provides: z.object({ a: z.number() }),
         run: async () => ({ a: 1 }),
@@ -512,7 +512,7 @@ describe('pipeline', () => {
         },
       });
 
-      const b = defineStep({
+      const b = step({
         name: 'b',
         provides: z.object({ b: z.number() }),
         run: async () => ({ b: 2 }),
@@ -526,7 +526,7 @@ describe('pipeline', () => {
         steps: [a, b],
       });
 
-      const fails = defineStep({
+      const fails = step({
         name: 'fails',
         run: async () => {
           throw new Error('outer fail');
@@ -542,6 +542,43 @@ describe('pipeline', () => {
       expect(result.success).toBe(false);
       // Inner pipeline's steps should be rolled back
       expect(rolledBack).toEqual(['b', 'a']);
+    });
+
+    it('surfaces inner rollback failures to the outer pipeline', async () => {
+      const a = step({
+        name: 'a',
+        provides: z.object({ a: z.number() }),
+        run: async () => ({ a: 1 }),
+        rollback: async () => {
+          throw new Error('a rollback boom');
+        },
+      });
+
+      const inner = pipeline({
+        name: 'inner',
+        steps: [a],
+      });
+
+      const fails = step({
+        name: 'fails',
+        run: async () => {
+          throw new Error('outer fail');
+        },
+      });
+
+      const outer = pipeline({
+        name: 'outer',
+        steps: [inner, fails],
+      });
+
+      const result = await outer.run({});
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        // Inner pipeline's rollback failure should surface
+        expect(result.rollback.failed).toHaveLength(1);
+        expect(result.rollback.failed[0].step).toBe('inner');
+        expect(result.rollback.failed[0].error).toBeInstanceOf(RollbackError);
+      }
     });
   });
 });

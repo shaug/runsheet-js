@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, pipeline, choice, when, RunsheetError } from './index.js';
+import { step, pipeline, choice, when, RunsheetError } from './index.js';
 
 describe('choice', () => {
-  const chargeCard = defineStep({
+  const chargeCard = step({
     name: 'chargeCard',
     requires: z.object({ amount: z.number() }),
     provides: z.object({ chargeId: z.string() }),
     run: async (ctx) => ({ chargeId: `card_${ctx.amount}` }),
   });
 
-  const chargeBankTransfer = defineStep({
+  const chargeBankTransfer = step({
     name: 'chargeBankTransfer',
     requires: z.object({ amount: z.number() }),
     provides: z.object({ chargeId: z.string() }),
@@ -19,17 +19,12 @@ describe('choice', () => {
 
   describe('basic execution', () => {
     it('executes the first matching branch', async () => {
-      const p = pipeline({
-        name: 'test',
-        steps: [
-          choice(
-            [(ctx) => ctx.method === 'card', chargeCard],
-            [(ctx) => ctx.method === 'bank', chargeBankTransfer],
-          ),
-        ],
-      });
+      const ch = choice(
+        [(ctx) => ctx.method === 'card', chargeCard],
+        [(ctx) => ctx.method === 'bank', chargeBankTransfer],
+      );
 
-      const result = await p.run({ method: 'card', amount: 100 });
+      const result = await ch.run({ method: 'card', amount: 100 });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.chargeId).toBe('card_100');
@@ -39,7 +34,7 @@ describe('choice', () => {
     it('evaluates predicates in order (first match wins)', async () => {
       const calls: string[] = [];
 
-      const first = defineStep({
+      const first = step({
         name: 'first',
         provides: z.object({ picked: z.string() }),
         run: async () => {
@@ -48,7 +43,7 @@ describe('choice', () => {
         },
       });
 
-      const second = defineStep({
+      const second = step({
         name: 'second',
         provides: z.object({ picked: z.string() }),
         run: async () => {
@@ -57,12 +52,9 @@ describe('choice', () => {
         },
       });
 
-      const p = pipeline({
-        name: 'test',
-        steps: [choice([() => true, first], [() => true, second])],
-      });
+      const ch = choice([() => true, first], [() => true, second]);
 
-      const result = await p.run({});
+      const result = await ch.run({});
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.picked).toBe('first');
@@ -71,17 +63,12 @@ describe('choice', () => {
     });
 
     it('skips branches whose predicates return false', async () => {
-      const p = pipeline({
-        name: 'test',
-        steps: [
-          choice(
-            [(ctx) => ctx.method === 'card', chargeCard],
-            [(ctx) => ctx.method === 'bank', chargeBankTransfer],
-          ),
-        ],
-      });
+      const ch = choice(
+        [(ctx) => ctx.method === 'card', chargeCard],
+        [(ctx) => ctx.method === 'bank', chargeBankTransfer],
+      );
 
-      const result = await p.run({ method: 'bank', amount: 200 });
+      const result = await ch.run({ method: 'bank', amount: 200 });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.chargeId).toBe('bank_200');
@@ -89,13 +76,13 @@ describe('choice', () => {
     });
 
     it('works within a sequential pipeline', async () => {
-      const validate = defineStep({
+      const validate = step({
         name: 'validate',
         provides: z.object({ amount: z.number(), method: z.string() }),
         run: async () => ({ amount: 50, method: 'card' }),
       });
 
-      const receipt = defineStep({
+      const receipt = step({
         name: 'receipt',
         requires: z.object({ chargeId: z.string() }),
         provides: z.object({ sent: z.boolean() }),
@@ -140,18 +127,15 @@ describe('choice', () => {
     });
 
     it('supports default branch with () => true', async () => {
-      const defaultStep = defineStep({
+      const defaultStep = step({
         name: 'default',
         provides: z.object({ chargeId: z.string() }),
         run: async () => ({ chargeId: 'default_0' }),
       });
 
-      const p = pipeline({
-        name: 'test',
-        steps: [choice([(ctx) => ctx.method === 'card', chargeCard], [() => true, defaultStep])],
-      });
+      const ch = choice([(ctx) => ctx.method === 'card', chargeCard], [() => true, defaultStep]);
 
-      const result = await p.run({ method: 'crypto', amount: 0 });
+      const result = await ch.run({ method: 'crypto', amount: 0 });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.chargeId).toBe('default_0');
@@ -159,23 +143,18 @@ describe('choice', () => {
     });
 
     it('supports a bare step as the default (no tuple wrapper)', async () => {
-      const defaultStep = defineStep({
+      const defaultStep = step({
         name: 'default',
         provides: z.object({ chargeId: z.string() }),
         run: async () => ({ chargeId: 'default_0' }),
       });
 
-      const p = pipeline({
-        name: 'test',
-        steps: [
-          choice(
-            [(ctx) => ctx.method === 'card', chargeCard],
-            defaultStep, // bare step as default
-          ),
-        ],
-      });
+      const ch = choice(
+        [(ctx) => ctx.method === 'card', chargeCard],
+        defaultStep, // bare step as default
+      );
 
-      const result = await p.run({ method: 'crypto', amount: 0 });
+      const result = await ch.run({ method: 'crypto', amount: 0 });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.chargeId).toBe('default_0');
@@ -183,56 +162,44 @@ describe('choice', () => {
     });
 
     it('includes bare default step name in choice name', async () => {
-      const defaultStep = defineStep({
+      const defaultStep = step({
         name: 'defaultCharge',
         provides: z.object({ chargeId: z.string() }),
         run: async () => ({ chargeId: 'x' }),
       });
 
-      const p = pipeline({
-        name: 'test',
-        steps: [choice([(ctx) => ctx.method === 'card', chargeCard], defaultStep)],
-      });
+      const ch = choice([(ctx) => ctx.method === 'card', chargeCard], defaultStep);
 
-      const result = await p.run({ method: 'crypto', amount: 0 });
-      expect(result.meta.stepsExecuted).toEqual(['choice(chargeCard, defaultCharge)']);
+      const result = await ch.run({ method: 'crypto', amount: 0 });
+      expect(result.meta.name).toBe('choice(chargeCard, defaultCharge)');
     });
   });
 
   describe('failure handling', () => {
-    it('fails with CHOICE_NO_MATCH when no predicate matches', async () => {
-      const p = pipeline({
-        name: 'test',
-        steps: [
-          choice(
-            [(ctx) => ctx.method === 'card', chargeCard],
-            [(ctx) => ctx.method === 'bank', chargeBankTransfer],
-          ),
-        ],
-      });
+    it('returns empty data when no predicate matches', async () => {
+      const ch = choice(
+        [(ctx) => ctx.method === 'card', chargeCard],
+        [(ctx) => ctx.method === 'bank', chargeBankTransfer],
+      );
 
-      const result = await p.run({ method: 'crypto', amount: 100 });
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error).toBeInstanceOf(RunsheetError);
-        expect((result.error as RunsheetError).code).toBe('CHOICE_NO_MATCH');
+      const args = { method: 'crypto', amount: 100 };
+      const result = await ch.run(args);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toEqual({});
+        expect(result.meta.stepsExecuted).toEqual([]);
       }
     });
 
     it('fails when a predicate throws', async () => {
-      const p = pipeline({
-        name: 'test',
-        steps: [
-          choice([
-            () => {
-              throw new Error('predicate boom');
-            },
-            chargeCard,
-          ]),
-        ],
-      });
+      const ch = choice([
+        () => {
+          throw new Error('predicate boom');
+        },
+        chargeCard,
+      ]);
 
-      const result = await p.run({ amount: 100 });
+      const result = await ch.run({ amount: 100 });
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -241,13 +208,10 @@ describe('choice', () => {
     });
 
     it('validates inner step requires', async () => {
-      const p = pipeline({
-        name: 'test',
-        steps: [choice([() => true, chargeCard])],
-      });
+      const ch = choice([() => true, chargeCard]);
 
       // chargeCard requires { amount: number } — not provided
-      const result = await p.run({});
+      const result = await ch.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -256,18 +220,15 @@ describe('choice', () => {
     });
 
     it('fails when inner step provides validation fails', async () => {
-      const badProvides = defineStep({
+      const badProvides = step({
         name: 'badProvides',
         provides: z.object({ chargeId: z.string() }),
         run: async () => ({ chargeId: 123 as unknown as string }), // wrong type
       });
 
-      const p = pipeline({
-        name: 'test',
-        steps: [choice([() => true, badProvides])],
-      });
+      const ch = choice([() => true, badProvides]);
 
-      const result = await p.run({});
+      const result = await ch.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBeInstanceOf(RunsheetError);
@@ -276,22 +237,19 @@ describe('choice', () => {
     });
 
     it('propagates inner step failure', async () => {
-      const failing = defineStep({
+      const failing = step({
         name: 'failing',
         run: async () => {
           throw new Error('step boom');
         },
       });
 
-      const p = pipeline({
-        name: 'test',
-        steps: [choice([() => true, failing])],
-      });
+      const ch = choice([() => true, failing]);
 
-      const result = await p.run({});
+      const result = await ch.run({});
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.message.includes('step boom')).toBe(true);
+        expect(result.error.message).toContain('step boom');
       }
     });
   });
@@ -300,7 +258,7 @@ describe('choice', () => {
     it('rolls back the matched branch when a later step fails', async () => {
       const rolledBack: string[] = [];
 
-      const withRollback = defineStep({
+      const withRollback = step({
         name: 'withRollback',
         provides: z.object({ chargeId: z.string() }),
         run: async () => ({ chargeId: 'ch_1' }),
@@ -309,7 +267,7 @@ describe('choice', () => {
         },
       });
 
-      const laterFails = defineStep({
+      const laterFails = step({
         name: 'laterFails',
         run: async () => {
           throw new Error('later fail');
@@ -329,7 +287,7 @@ describe('choice', () => {
     it('does not roll back branches that did not run', async () => {
       const rolledBack: string[] = [];
 
-      const branchA = defineStep({
+      const branchA = step({
         name: 'branchA',
         provides: z.object({ x: z.number() }),
         run: async () => ({ x: 1 }),
@@ -338,7 +296,7 @@ describe('choice', () => {
         },
       });
 
-      const branchB = defineStep({
+      const branchB = step({
         name: 'branchB',
         provides: z.object({ x: z.number() }),
         run: async () => ({ x: 2 }),
@@ -347,7 +305,7 @@ describe('choice', () => {
         },
       });
 
-      const laterFails = defineStep({
+      const laterFails = step({
         name: 'laterFails',
         run: async () => {
           throw new Error('fail');
@@ -370,7 +328,7 @@ describe('choice', () => {
     it('executes a when()-wrapped branch when predicate matches', async () => {
       const conditional = when(
         (ctx: { amount: number }) => ctx.amount > 50,
-        defineStep({
+        step({
           name: 'bigCharge',
           requires: z.object({ amount: z.number() }),
           provides: z.object({ chargeId: z.string() }),
@@ -378,12 +336,9 @@ describe('choice', () => {
         }),
       );
 
-      const p = pipeline({
-        name: 'test',
-        steps: [choice([() => true, conditional])],
-      });
+      const ch = choice([() => true, conditional]);
 
-      const result = await p.run({ amount: 100 });
+      const result = await ch.run({ amount: 100 });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.chargeId).toBe('big_100');
@@ -393,17 +348,14 @@ describe('choice', () => {
 
   describe('metadata', () => {
     it('uses a descriptive step name', async () => {
-      const p = pipeline({
-        name: 'test',
-        steps: [choice([() => true, chargeCard])],
-      });
+      const ch = choice([() => true, chargeCard]);
 
-      const result = await p.run({ amount: 50 });
-      expect(result.meta.stepsExecuted).toEqual(['choice(chargeCard)']);
+      const result = await ch.run({ amount: 50 });
+      expect(result.meta.name).toBe('choice(chargeCard)');
     });
 
     it('includes failed branch in stepsExecuted', async () => {
-      const failing = defineStep({
+      const failing = step({
         name: 'failingBranch',
         run: async () => {
           throw new Error('branch boom');

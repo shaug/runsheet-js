@@ -192,22 +192,26 @@ export function distribute<
 
     if (allErrors.length > 0) {
       // Roll back succeeded items in reverse order (best-effort)
+      const rollbackErrors: Error[] = [];
       if (step.rollback) {
         for (let i = succeeded.length - 1; i >= 0; i--) {
           try {
             const combo = combinations[succeeded[i].index];
             const itemCtx = Object.freeze({ ...baseCtx, ...combo });
             await step.rollback(itemCtx, succeeded[i].output);
-          } catch {
-            // Best-effort — swallowed during partial failure
+          } catch (err) {
+            rollbackErrors.push(toError(err));
           }
         }
       }
-      return stepFailure(
-        collapseErrors(allErrors, `${stepName}: ${allErrors.length} item(s) failed`),
-        meta,
-        stepName,
-      );
+      const error = collapseErrors(allErrors, `${stepName}: ${allErrors.length} item(s) failed`);
+      if (rollbackErrors.length > 0) {
+        error.cause = new RollbackError(
+          `${stepName}: ${rollbackErrors.length} partial-failure rollback(s) failed`,
+          rollbackErrors,
+        );
+      }
+      return stepFailure(error, meta, stepName);
     }
 
     // Collect results in cross-product order

@@ -40,7 +40,7 @@ export type PipelineBuilder<Args extends StepContext, Ctx extends StepContext> =
    * include the step's `Provides`.
    *
    * @typeParam S - The step type being added.
-   * @param step - A {@link Step} (from `defineStep`, `when`, `pipeline`, etc.).
+   * @param step - A {@link Step} (from `step`, `when`, `pipeline`, etc.).
    * @returns A new builder with the expanded context type.
    */
   readonly step: <S extends Step>(
@@ -101,7 +101,7 @@ export function makeBuilder<Args extends StepContext, Ctx extends StepContext>(
         steps: state.steps,
         middleware: state.middleware.length > 0 ? state.middleware : undefined,
         argsSchema: state.argsSchema as StepSchema<Args> | undefined,
-        strict: state.strict || undefined,
+        strict: state.strict ? true : undefined,
       }) as AggregateStep<Args, Ctx>,
   });
 }

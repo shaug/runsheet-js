@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, pipeline, distribute, RollbackError } from './index.js';
+import { step, pipeline, distribute, RollbackError } from './index.js';
 
 describe('distribute', () => {
-  const sendEmail = defineStep({
+  const sendEmail = step({
     name: 'sendEmail',
     requires: z.object({ accountId: z.string(), orgId: z.string() }),
     provides: z.object({ emailId: z.string() }),
@@ -12,12 +12,9 @@ describe('distribute', () => {
 
   describe('single mapping', () => {
     it('runs the step once per item in the collection', async () => {
-      const p = pipeline({
-        name: 'test',
-        steps: [distribute('emails', { accountIds: 'accountId' }, sendEmail)],
-      });
+      const d = distribute('emails', { accountIds: 'accountId' }, sendEmail);
 
-      const result = await p.run({ orgId: 'org-1', accountIds: ['a1', 'a2', 'a3'] });
+      const result = await d.run({ orgId: 'org-1', accountIds: ['a1', 'a2', 'a3'] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.emails).toEqual([
@@ -31,7 +28,7 @@ describe('distribute', () => {
     it('passes non-mapped context keys through unchanged', async () => {
       const received: Record<string, unknown>[] = [];
 
-      const step = defineStep({
+      const inner = step({
         name: 'capture',
         requires: z.object({ accountId: z.string(), orgId: z.string() }),
         provides: z.object({ ok: z.boolean() }),
@@ -41,12 +38,9 @@ describe('distribute', () => {
         },
       });
 
-      const p = pipeline({
-        name: 'test',
-        steps: [distribute('results', { accountIds: 'accountId' }, step)],
-      });
+      const d = distribute('results', { accountIds: 'accountId' }, inner);
 
-      await p.run({ orgId: 'org-1', accountIds: ['a1', 'a2'] });
+      await d.run({ orgId: 'org-1', accountIds: ['a1', 'a2'] });
       // Both invocations should see orgId
       expect(received).toEqual(
         expect.arrayContaining([
@@ -61,7 +55,7 @@ describe('distribute', () => {
     it('runs the step once per combination of items', async () => {
       const received: string[] = [];
 
-      const step = defineStep({
+      const inner = step({
         name: 'report',
         requires: z.object({ accountId: z.string(), regionId: z.string() }),
         provides: z.object({ key: z.string() }),
@@ -72,12 +66,9 @@ describe('distribute', () => {
         },
       });
 
-      const p = pipeline({
-        name: 'test',
-        steps: [distribute('reports', { accountIds: 'accountId', regionIds: 'regionId' }, step)],
-      });
+      const d = distribute('reports', { accountIds: 'accountId', regionIds: 'regionId' }, inner);
 
-      const result = await p.run({
+      const result = await d.run({
         accountIds: ['a1', 'a2'],
         regionIds: ['r1', 'r2', 'r3'],
       });
@@ -93,12 +84,9 @@ describe('distribute', () => {
 
   describe('empty collections', () => {
     it('returns empty results when a mapped collection is empty', async () => {
-      const p = pipeline({
-        name: 'test',
-        steps: [distribute('emails', { accountIds: 'accountId' }, sendEmail)],
-      });
+      const d = distribute('emails', { accountIds: 'accountId' }, sendEmail);
 
-      const result = await p.run({ orgId: 'org-1', accountIds: [] });
+      const result = await d.run({ orgId: 'org-1', accountIds: [] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.emails).toEqual([]);
@@ -106,19 +94,16 @@ describe('distribute', () => {
     });
 
     it('returns empty results when any cross-product collection is empty', async () => {
-      const step = defineStep({
+      const inner = step({
         name: 'report',
         requires: z.object({ accountId: z.string(), regionId: z.string() }),
         provides: z.object({ key: z.string() }),
         run: async (ctx) => ({ key: `${ctx.accountId}-${ctx.regionId}` }),
       });
 
-      const p = pipeline({
-        name: 'test',
-        steps: [distribute('reports', { accountIds: 'accountId', regionIds: 'regionId' }, step)],
-      });
+      const d = distribute('reports', { accountIds: 'accountId', regionIds: 'regionId' }, inner);
 
-      const result = await p.run({ accountIds: ['a1'], regionIds: [] });
+      const result = await d.run({ accountIds: ['a1'], regionIds: [] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.reports).toEqual([]);
@@ -131,7 +116,7 @@ describe('distribute', () => {
       const running: string[] = [];
       let maxConcurrent = 0;
 
-      const step = defineStep({
+      const inner = step({
         name: 'slow',
         requires: z.object({ accountId: z.string() }),
         provides: z.object({ done: z.boolean() }),
@@ -144,12 +129,9 @@ describe('distribute', () => {
         },
       });
 
-      const p = pipeline({
-        name: 'test',
-        steps: [distribute('results', { accountIds: 'accountId' }, step)],
-      });
+      const d = distribute('results', { accountIds: 'accountId' }, inner);
 
-      await p.run({ accountIds: ['a1', 'a2', 'a3'] });
+      await d.run({ accountIds: ['a1', 'a2', 'a3'] });
       expect(maxConcurrent).toBeGreaterThan(1);
     });
   });
@@ -158,7 +140,7 @@ describe('distribute', () => {
     it('rolls back succeeded items when some items fail', async () => {
       const rolledBack: string[] = [];
 
-      const step = defineStep({
+      const inner = step({
         name: 'flaky',
         requires: z.object({ accountId: z.string() }),
         provides: z.object({ out: z.string() }),
@@ -172,12 +154,9 @@ describe('distribute', () => {
         },
       });
 
-      const p = pipeline({
-        name: 'test',
-        steps: [distribute('results', { accountIds: 'accountId' }, step)],
-      });
+      const d = distribute('results', { accountIds: 'accountId' }, inner);
 
-      const result = await p.run({ accountIds: ['a1', 'a2', 'a3'] });
+      const result = await d.run({ accountIds: ['a1', 'a2', 'a3'] });
       expect(result.success).toBe(false);
       expect(rolledBack.sort()).toEqual(['a1', 'a3']);
     });
@@ -187,7 +166,7 @@ describe('distribute', () => {
     it('rolls back all items when a later step fails', async () => {
       const rolledBack: string[] = [];
 
-      const step = defineStep({
+      const inner = step({
         name: 'distStep',
         requires: z.object({ accountId: z.string() }),
         provides: z.object({ out: z.string() }),
@@ -197,7 +176,7 @@ describe('distribute', () => {
         },
       });
 
-      const laterFails = defineStep({
+      const laterFails = step({
         name: 'laterFails',
         run: async () => {
           throw new Error('later fail');
@@ -206,7 +185,7 @@ describe('distribute', () => {
 
       const p = pipeline({
         name: 'test',
-        steps: [distribute('results', { accountIds: 'accountId' }, step), laterFails],
+        steps: [distribute('results', { accountIds: 'accountId' }, inner), laterFails],
       });
 
       const result = await p.run({ accountIds: ['a1', 'a2', 'a3'] });
@@ -215,7 +194,7 @@ describe('distribute', () => {
     });
 
     it('reports rollback errors via RollbackError', async () => {
-      const step = defineStep({
+      const inner = step({
         name: 'distStep',
         requires: z.object({ accountId: z.string() }),
         provides: z.object({ out: z.string() }),
@@ -225,7 +204,7 @@ describe('distribute', () => {
         },
       });
 
-      const laterFails = defineStep({
+      const laterFails = step({
         name: 'laterFails',
         run: async () => {
           throw new Error('later fail');
@@ -234,7 +213,7 @@ describe('distribute', () => {
 
       const p = pipeline({
         name: 'test',
-        steps: [distribute('results', { accountIds: 'accountId' }, step), laterFails],
+        steps: [distribute('results', { accountIds: 'accountId' }, inner), laterFails],
       });
 
       const result = await p.run({ accountIds: ['a1', 'a2'] });
@@ -248,31 +227,25 @@ describe('distribute', () => {
 
   describe('metadata', () => {
     it('uses a descriptive step name', async () => {
-      const p = pipeline({
-        name: 'test',
-        steps: [distribute('emails', { accountIds: 'accountId' }, sendEmail)],
-      });
+      const d = distribute('emails', { accountIds: 'accountId' }, sendEmail);
 
-      const result = await p.run({ orgId: 'org-1', accountIds: ['a1'] });
-      expect(result.meta.stepsExecuted).toEqual(['distribute(emails, sendEmail)']);
+      const result = await d.run({ orgId: 'org-1', accountIds: ['a1'] });
+      expect(result.meta.name).toBe('distribute(emails, sendEmail)');
     });
   });
 
   describe('step without rollback', () => {
     it('succeeds without rollback handler', async () => {
-      const step = defineStep({
+      const inner = step({
         name: 'noRollback',
         requires: z.object({ accountId: z.string() }),
         provides: z.object({ out: z.string() }),
         run: async (ctx) => ({ out: ctx.accountId }),
       });
 
-      const p = pipeline({
-        name: 'test',
-        steps: [distribute('results', { accountIds: 'accountId' }, step)],
-      });
+      const d = distribute('results', { accountIds: 'accountId' }, inner);
 
-      const result = await p.run({ accountIds: ['a1', 'a2'] });
+      const result = await d.run({ accountIds: ['a1', 'a2'] });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.results).toEqual([{ out: 'a1' }, { out: 'a2' }]);
@@ -282,7 +255,7 @@ describe('distribute', () => {
 
   describe('pipeline integration', () => {
     it('works within a sequential pipeline with setup step', async () => {
-      const setup = defineStep({
+      const setup = step({
         name: 'setup',
         provides: z.object({
           orgId: z.string(),

@@ -17,8 +17,8 @@ import {
   collapseErrors,
   createStepObject,
 } from './internal.js';
-import { PredicateError, RollbackError } from './errors.js';
-import { isConditionalStep } from './when.js';
+import { RollbackError } from './errors.js';
+import { wasSkipped } from './when.js';
 
 // ---------------------------------------------------------------------------
 // Inner step execution result
@@ -36,20 +36,9 @@ type InnerResult = {
 // ---------------------------------------------------------------------------
 
 async function executeInner(step: Step, ctx: Readonly<StepContext>): Promise<InnerResult> {
-  // Conditional check
-  try {
-    if (isConditionalStep(step) && !step.predicate(ctx)) {
-      return { step, skipped: true };
-    }
-  } catch (err) {
-    const cause = toError(err);
-    const error = new PredicateError(`${step.name} predicate: ${cause.message}`);
-    error.cause = cause;
-    return { step, skipped: false, error };
-  }
-
   const result = await step.run(ctx);
   if (!result.success) return { step, skipped: false, error: result.error };
+  if (wasSkipped(result.meta)) return { step, skipped: true };
   return { step, skipped: false, output: result.data };
 }
 
@@ -99,6 +88,15 @@ export function parallel<S extends readonly Step[]>(
   const name = `parallel(${steps.map((s) => s.name).join(', ')})`;
   const innerSteps: readonly Step[] = steps;
 
+  // Track which inner steps ran per execution for outer rollback.
+  // INVARIANT: This relies on pipeline.ts storing the exact result.data
+  // reference in its outputs array. If the pipeline ever clones
+  // result.data, this WeakMap lookup will silently fail.
+  // Exercised by parallel.test.ts ("rolls back all inner steps when
+  // a later sequential step fails").
+  type ExecutedEntry = { step: Step; output: StepOutput };
+  const executedMap = new WeakMap<object, ExecutedEntry[]>();
+
   // ----- run: execute all inner steps concurrently ----- //
   const run = async (ctx: Readonly<StepContext>): Promise<AggregateResult<StepOutput>> => {
     const frozenCtx = Object.freeze({ ...ctx });
@@ -128,19 +126,24 @@ export function parallel<S extends readonly Step[]>(
 
     if (allErrors.length > 0) {
       // Rollback succeeded inner steps in reverse array order (best-effort)
+      const rollbackErrors: Error[] = [];
       for (let i = succeeded.length - 1; i >= 0; i--) {
         const { step, output } = succeeded[i];
         if (step.rollback) {
           try {
             await step.rollback(frozenCtx, output);
-          } catch {
-            // Best-effort — inner rollback errors during partial failure
-            // are not surfaced. The pipeline's own rollback report covers
-            // the parallel step as a whole.
+          } catch (err) {
+            rollbackErrors.push(toError(err));
           }
         }
       }
       const error = collapseErrors(allErrors, `${name}: ${allErrors.length} step(s) failed`);
+      if (rollbackErrors.length > 0) {
+        error.cause = new RollbackError(
+          `${name}: ${rollbackErrors.length} partial-failure rollback(s) failed`,
+          rollbackErrors,
+        );
+      }
       const meta = aggregateMeta(name, frozenCtx, executed);
       return aggregateFailure(error, meta, name);
     }
@@ -162,15 +165,6 @@ export function parallel<S extends readonly Step[]>(
     const meta = aggregateMeta(name, frozenCtx, executed);
     return aggregateSuccess(merged, meta);
   };
-
-  // Track which inner steps ran per execution for outer rollback.
-  // INVARIANT: This relies on pipeline.ts storing the exact result.data
-  // reference in its outputs array. If the pipeline ever clones
-  // result.data, this WeakMap lookup will silently fail.
-  // Exercised by parallel.test.ts ("rolls back all inner steps when
-  // a later sequential step fails").
-  type ExecutedEntry = { step: Step; output: StepOutput };
-  const executedMap = new WeakMap<object, ExecutedEntry[]>();
 
   // ----- rollback: called when a later sequential step fails ----- //
   // The pipeline passes the merged output. Only inner steps that

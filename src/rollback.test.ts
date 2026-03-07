@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, pipeline, UnknownError } from './index.js';
+import { step, pipeline, UnknownError } from './index.js';
 
 describe('rollback', () => {
   it('executes rollbacks in reverse order on failure', async () => {
     const rollbackOrder: string[] = [];
 
-    const a = defineStep({
+    const a = step({
       name: 'a',
       provides: z.object({ a: z.number() }),
       run: async () => ({ a: 1 }),
@@ -15,7 +15,7 @@ describe('rollback', () => {
       },
     });
 
-    const b = defineStep({
+    const b = step({
       name: 'b',
       provides: z.object({ b: z.number() }),
       run: async () => ({ b: 2 }),
@@ -24,7 +24,7 @@ describe('rollback', () => {
       },
     });
 
-    const c = defineStep({
+    const c = step({
       name: 'c',
       run: async () => {
         throw new Error('c failed');
@@ -44,7 +44,7 @@ describe('rollback', () => {
   it('passes pre-step context and step output to rollback handlers', async () => {
     const rollbackArgs: Array<{ ctx: unknown; output: unknown }> = [];
 
-    const a = defineStep({
+    const a = step({
       name: 'a',
       provides: z.object({ a: z.number() }),
       run: async () => ({ a: 1 }),
@@ -53,7 +53,7 @@ describe('rollback', () => {
       },
     });
 
-    const b = defineStep({
+    const b = step({
       name: 'b',
       provides: z.object({ b: z.number() }),
       run: async () => ({ b: 2 }),
@@ -62,7 +62,7 @@ describe('rollback', () => {
       },
     });
 
-    const c = defineStep({
+    const c = step({
       name: 'c',
       run: async () => {
         throw new Error('fail');
@@ -92,7 +92,7 @@ describe('rollback', () => {
   it('continues rolling back when a rollback handler throws', async () => {
     const rollbackOrder: string[] = [];
 
-    const a = defineStep({
+    const a = step({
       name: 'a',
       run: async () => ({ a: 1 }),
       rollback: async () => {
@@ -100,7 +100,7 @@ describe('rollback', () => {
       },
     });
 
-    const b = defineStep({
+    const b = step({
       name: 'b',
       run: async () => ({ b: 2 }),
       rollback: async () => {
@@ -109,7 +109,7 @@ describe('rollback', () => {
       },
     });
 
-    const c = defineStep({
+    const c = step({
       name: 'c',
       run: async () => {
         throw new Error('c failed');
@@ -128,13 +128,13 @@ describe('rollback', () => {
   });
 
   it('reports completed and failed rollbacks in the result', async () => {
-    const a = defineStep({
+    const a = step({
       name: 'a',
       run: async () => ({ a: 1 }),
       rollback: async () => {},
     });
 
-    const b = defineStep({
+    const b = step({
       name: 'b',
       run: async () => ({ b: 2 }),
       rollback: async () => {
@@ -142,7 +142,7 @@ describe('rollback', () => {
       },
     });
 
-    const c = defineStep({
+    const c = step({
       name: 'c',
       run: async () => {
         throw new Error('c failed');
@@ -167,7 +167,7 @@ describe('rollback', () => {
   it('skips steps without rollback handlers silently', async () => {
     const rollbackOrder: string[] = [];
 
-    const a = defineStep({
+    const a = step({
       name: 'a',
       run: async () => ({ a: 1 }),
       rollback: async () => {
@@ -175,13 +175,13 @@ describe('rollback', () => {
       },
     });
 
-    const b = defineStep({
+    const b = step({
       name: 'b',
       run: async () => ({ b: 2 }),
       // no rollback
     });
 
-    const c = defineStep({
+    const c = step({
       name: 'c',
       run: async () => ({ c: 3 }),
       rollback: async () => {
@@ -189,7 +189,7 @@ describe('rollback', () => {
       },
     });
 
-    const d = defineStep({
+    const d = step({
       name: 'd',
       run: async () => {
         throw new Error('d failed');
@@ -214,7 +214,7 @@ describe('rollback', () => {
   it('does not rollback the failed step itself', async () => {
     const rollbackOrder: string[] = [];
 
-    const a = defineStep({
+    const a = step({
       name: 'a',
       run: async () => ({ a: 1 }),
       rollback: async () => {
@@ -222,7 +222,7 @@ describe('rollback', () => {
       },
     });
 
-    const b = defineStep({
+    const b = step({
       name: 'b',
       run: async () => {
         throw new Error('b failed');
@@ -245,7 +245,7 @@ describe('rollback', () => {
   it('produces empty rollback when first step fails', async () => {
     const rollbackOrder: string[] = [];
 
-    const a = defineStep({
+    const a = step({
       name: 'a',
       run: async () => {
         throw new Error('first step failed');
@@ -271,7 +271,7 @@ describe('rollback', () => {
   });
 
   it('wraps non-Error exceptions from rollback handlers', async () => {
-    const a = defineStep({
+    const a = step({
       name: 'a',
       run: async () => ({ a: 1 }),
       rollback: async () => {
@@ -279,7 +279,7 @@ describe('rollback', () => {
       },
     });
 
-    const b = defineStep({
+    const b = step({
       name: 'b',
       run: async () => {
         throw new Error('b failed');
@@ -302,7 +302,7 @@ describe('rollback', () => {
   });
 
   it('returns empty rollback report on success', async () => {
-    const a = defineStep({
+    const a = step({
       name: 'a',
       run: async () => ({ a: 1 }),
       rollback: async () => {},

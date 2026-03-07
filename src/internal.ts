@@ -31,7 +31,9 @@ export const EMPTY_ROLLBACK: RollbackReport = Object.freeze({
 export function formatIssues(
   issues: readonly { path: readonly (string | number)[]; message: string }[],
 ): string {
-  return issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ');
+  return issues
+    .map((i) => (i.path.length > 0 ? `${i.path.join('.')}: ${i.message}` : i.message))
+    .join(', ');
 }
 
 /**
@@ -74,7 +76,7 @@ export function createStepObject(fields: {
 /**
  * Create a {@link StepMeta} for a step execution.
  *
- * Used by `defineStep` and collection combinators. Contains only
+ * Used by `step` and collection combinators. Contains only
  * the step's name and the arguments it received.
  */
 export function baseMeta(name: string, args: Readonly<StepContext>): StepMeta {
@@ -98,7 +100,7 @@ export function aggregateMeta(
 /**
  * Create a successful {@link StepResult}.
  *
- * The returned object is frozen (immutable). Used by `defineStep`
+ * The returned object is frozen (immutable). Used by `step`
  * and collection combinators to produce consistent success results.
  */
 export function stepSuccess<T extends StepOutput>(data: T, meta: StepMeta): StepSuccess<T> {

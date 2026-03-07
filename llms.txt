@@ -36,16 +36,16 @@ zod is an optional peer dependency — only needed if you use schema validation.
 Install it alongside runsheet if you want runtime schema validation at step
 boundaries: `pnpm add runsheet zod`
 
-### defineStep
+### step
 
 Define a pipeline step with typed inputs and outputs.
 
 ```typescript
-import { defineStep } from 'runsheet';
+import { step } from 'runsheet';
 import { z } from 'zod';
 
 // With Zod schemas (runtime + compile-time validation)
-const fetchUser = defineStep({
+const fetchUser = step({
   name: 'fetchUser',
   requires: z.object({ userId: z.string() }),
   provides: z.object({ user: z.object({ name: z.string() }) }),
@@ -56,7 +56,7 @@ const fetchUser = defineStep({
 });
 
 // With generics only (compile-time validation, no runtime schemas)
-const logUser = defineStep<{ user: { name: string } }, { loggedAt: Date }>({
+const logUser = step<{ user: { name: string } }, { loggedAt: Date }>({
   name: 'logUser',
   run: async (ctx) => {
     console.log(ctx.user.name);
@@ -65,7 +65,7 @@ const logUser = defineStep<{ user: { name: string } }, { loggedAt: Date }>({
 });
 
 // With rollback
-const chargePayment = defineStep({
+const chargePayment = step({
   name: 'chargePayment',
   requires: z.object({ amount: z.number() }),
   provides: z.object({ chargeId: z.string() }),
@@ -84,7 +84,7 @@ Step run functions can be sync or async.
 ### Retry and timeout
 
 ```typescript
-const callApi = defineStep({
+const callApi = step({
   name: 'callApi',
   provides: z.object({ data: z.string() }),
   retry: { count: 3, delay: 200, backoff: 'exponential' },
@@ -96,7 +96,7 @@ const callApi = defineStep({
 });
 
 // With retryIf to only retry specific errors
-const selective = defineStep({
+const selective = step({
   name: 'selective',
   retry: {
     count: 3,
@@ -262,84 +262,34 @@ const p = pipeline({
 
 Predicates are evaluated in order — first match wins. A bare step (without a
 tuple) can be passed as the last argument to serve as a default — equivalent to
-`[() => true, step]`. If no predicate matches, the step fails with RunsheetError
-code 'CHOICE_NO_MATCH'. Only the matched branch participates in rollback.
+`[() => true, step]`. If no predicate matches, the step returns empty data and
+is treated as a no-op (like a skipped `when()`). Only the matched branch
+participates in rollback.
 
-### map (collection iteration)
-
-```typescript
-import { map } from 'runsheet';
-
-// Function form — items can be any type
-const p = pipeline({
-  name: 'notify',
-  steps: [
-    map(
-      'emails',
-      (ctx) => ctx.users,
-      async (user) => {
-        await sendEmail(user.email);
-        return { email: user.email, sentAt: new Date() };
-      },
-    ),
-  ],
-});
-
-// Step form — reuse existing steps, item spread into context
-const p = pipeline({
-  name: 'process',
-  steps: [map('results', (ctx) => ctx.items, processItem)],
-});
-```
-
-Items run concurrently via Promise.allSettled. Results collected into an array
-under the given key. In step form, each item is spread into the pipeline context
-({ ...ctx, ...item }) so the step sees both pipeline-level and per-item values.
-On partial failure, succeeded items are rolled back (step form only).
-
-### filter (collection filtering)
+### distribute (collection distribution)
 
 ```typescript
-import { filter, map } from 'runsheet';
+import { distribute } from 'runsheet';
 
-const p = pipeline({
-  name: 'notify',
-  steps: [
-    filter(
-      'eligible',
-      (ctx) => ctx.users,
-      (user) => user.optedIn,
-    ),
-    map('emails', (ctx) => ctx.eligible, sendEmail),
-  ],
-});
+// Single collection — run sendEmail once per accountId
+const d = distribute('emails', { accountIds: 'accountId' }, sendEmail);
+// Requires: { orgId: string, accountIds: string[] }
+// Provides: { emails: { emailId: string }[] }
+
+// Cross product — run once per (accountId, regionId) pair
+const d = distribute(
+  'reports',
+  { accountIds: 'accountId', regionIds: 'regionId' },
+  generateReport,
+);
+// 2 accounts × 3 regions = 6 concurrent executions
 ```
 
-Predicates run concurrently via Promise.allSettled. Supports sync or async
-predicates. Items where the predicate returns true are kept; original order is
-preserved. If any predicate throws, the step fails. No rollback (pure
-operation).
-
-### flatMap (collection expansion)
-
-```typescript
-import { flatMap } from 'runsheet';
-
-const p = pipeline({
-  name: 'process',
-  steps: [
-    flatMap(
-      'lineItems',
-      (ctx) => ctx.orders,
-      (order) => order.items,
-    ),
-  ],
-});
-```
-
-Maps each item to an array, then flattens one level. Callbacks run concurrently
-via Promise.allSettled. Supports sync or async callbacks. If any callback
-throws, the step fails. No rollback (pure operation).
+The mapping object connects context array keys to the step's scalar input keys.
+Non-mapped context keys pass through unchanged. Items run concurrently via
+Promise.allSettled. Supports partial-failure rollback (succeeded items rolled
+back) and external-failure rollback (all items rolled back when a later pipeline
+step fails).
 
 ### Dependency injection
 
@@ -449,25 +399,23 @@ RunsheetError instances with a discriminated `code` property:
 - PREDICATE — when() or choice() predicate threw
 - TIMEOUT — step exceeded its timeout
 - RETRY_EXHAUSTED — step failed after all retry attempts
-- STRICT_OVERLAP — two steps provide the same key (strict mode, build time)
-- CHOICE_NO_MATCH — no branch matched in a choice() step
+- STRICT_OVERLAP — two steps provide the same key (strict mode)
 - ROLLBACK — one or more rollback handlers failed in a combinator
-- UNKNOWN — a non-Error value was thrown and caught by the pipeline engine
+- UNKNOWN — a non-Error value was thrown and caught by the engine
 
 Application errors (thrown from step run functions) pass through as-is.
 
 ## Key exports
 
-Functions: defineStep, pipeline, when, parallel, choice, map, flatMap, filter
-Classes: RunsheetError, RequiresValidationError, ProvidesValidationError,
+Functions: step, pipeline, when, parallel, choice, distribute Classes:
+RunsheetError, RequiresValidationError, ProvidesValidationError,
 ArgsValidationError, PredicateError, TimeoutError, RetryExhaustedError,
-StrictOverlapError, ChoiceNoMatchError, RollbackError, UnknownError Types: Step,
-TypedStep, AggregateStep, StepConfig, StepContext, StepOutput, StepSchema,
-RetryPolicy, StepResult, StepSuccess, StepFailure, StepMeta, AggregateResult,
+StrictOverlapError, RollbackError, UnknownError Types: Step, TypedStep,
+AggregateStep, StepConfig, StepContext, StepOutput, StepSchema, RetryPolicy,
+StepResult, StepSuccess, StepFailure, StepMeta, AggregateResult,
 AggregateSuccess, AggregateFailure, AggregateMeta, RollbackReport,
 RollbackFailure, PipelineBuilder, PipelineConfig, StepMiddleware, StepInfo,
-StepExecutor, ConditionalStep, RunsheetErrorCode, ExtractRequires,
-ExtractProvides
+StepExecutor, RunsheetErrorCode, ExtractRequires, ExtractProvides
 
 ## Important patterns
 

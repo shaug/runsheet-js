@@ -19,7 +19,6 @@ export type RunsheetErrorCode =
   | 'TIMEOUT'
   | 'RETRY_EXHAUSTED'
   | 'STRICT_OVERLAP'
-  | 'CHOICE_NO_MATCH'
   | 'ROLLBACK'
   | 'UNKNOWN';
 
@@ -121,14 +120,6 @@ export class StrictOverlapError extends RunsheetError {
   }
 }
 
-/** No branch matched in a `choice()` step. */
-export class ChoiceNoMatchError extends RunsheetError {
-  constructor(message: string) {
-    super('CHOICE_NO_MATCH', message);
-    this.name = 'ChoiceNoMatchError';
-  }
-}
-
 /** A non-Error value was thrown and caught by the pipeline engine. */
 export class UnknownError extends RunsheetError {
   /** The original thrown value before stringification. */
@@ -150,6 +141,7 @@ export class RollbackError extends RunsheetError {
     super('ROLLBACK', message);
     this.name = 'RollbackError';
     this.causes = causes;
-    this.cause = causes.length === 1 ? causes[0] : new AggregateError(causes, message);
+    if (causes.length === 1) this.cause = causes[0];
+    else if (causes.length > 1) this.cause = new AggregateError(causes, message);
   }
 }

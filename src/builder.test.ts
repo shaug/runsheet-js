@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, pipeline, when, RunsheetError } from './index.js';
+import { step, pipeline, when, RunsheetError } from './index.js';
 import type { StepMiddleware } from './index.js';
 
 describe('pipeline (builder form)', () => {
-  const addA = defineStep({
+  const addA = step({
     name: 'addA',
     provides: z.object({ a: z.number() }),
     run: async () => ({ a: 1 }),
   });
 
-  const addB = defineStep({
+  const addB = step({
     name: 'addB',
     requires: z.object({ a: z.number() }),
     provides: z.object({ b: z.number() }),
@@ -28,7 +28,7 @@ describe('pipeline (builder form)', () => {
   });
 
   it('supports type-only args via generic', async () => {
-    const greet = defineStep({
+    const greet = step({
       name: 'greet',
       requires: z.object({ name: z.string() }),
       provides: z.object({ greeting: z.string() }),
@@ -50,7 +50,7 @@ describe('pipeline (builder form)', () => {
       argsSchema: z.object({ name: z.string() }),
     })
       .step(
-        defineStep({
+        step({
           name: 'greet',
           requires: z.object({ name: z.string() }),
           provides: z.object({ greeting: z.string() }),
@@ -124,7 +124,7 @@ describe('pipeline (builder form)', () => {
   it('supports when() with the builder API', async () => {
     const conditional = when(
       (ctx: { a: number }) => ctx.a > 0,
-      defineStep({
+      step({
         name: 'conditional',
         requires: z.object({ a: z.number() }),
         provides: z.object({ doubled: z.number() }),
@@ -168,13 +168,13 @@ describe('pipeline (builder form)', () => {
 
   describe('strict mode', () => {
     it('throws at build time when steps have overlapping provides keys', () => {
-      const first = defineStep({
+      const first = step({
         name: 'first',
         provides: z.object({ key: z.string() }),
         run: async () => ({ key: 'a' }),
       });
 
-      const second = defineStep({
+      const second = step({
         name: 'second',
         provides: z.object({ key: z.string() }),
         run: async () => ({ key: 'b' }),

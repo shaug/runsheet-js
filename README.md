@@ -6,10 +6,10 @@
 Type-safe, composable business logic pipelines for TypeScript.
 
 ```typescript
-import { defineStep, pipeline } from 'runsheet';
+import { step, pipeline } from 'runsheet';
 import { z } from 'zod';
 
-const validateOrder = defineStep({
+const validateOrder = step({
   name: 'validateOrder',
   requires: z.object({ orderId: z.string() }),
   provides: z.object({
@@ -18,7 +18,7 @@ const validateOrder = defineStep({
   run: async (ctx) => ({ order: await db.orders.find(ctx.orderId) }),
 });
 
-const chargePayment = defineStep({
+const chargePayment = step({
   name: 'chargePayment',
   requires: z.object({ order: z.object({ total: z.number() }) }),
   provides: z.object({ chargeId: z.string() }),
@@ -110,7 +110,7 @@ each handler receives the exact snapshot from before the step ran.
 **TypeScript generics only** — compile-time composition safety, no runtime cost:
 
 ```typescript
-const logOrder = defineStep<{ order: { id: string } }, { loggedAt: Date }>({
+const logOrder = step<{ order: { id: string } }, { loggedAt: Date }>({
   name: 'logOrder',
   run: async (ctx) => {
     console.log(`Processing order ${ctx.order.id}`);
@@ -123,7 +123,7 @@ const logOrder = defineStep<{ order: { id: string } }, { loggedAt: Date }>({
 provides):
 
 ```typescript
-const chargePayment = defineStep({
+const chargePayment = step({
   name: 'chargePayment',
   requires: z.object({ order: z.object({ total: z.number() }) }),
   provides: z.object({ chargeId: z.string() }),
@@ -144,7 +144,7 @@ the pre-step context snapshot and the step's output, so it knows exactly what to
 undo:
 
 ```typescript
-const reserveInventory = defineStep({
+const reserveInventory = step({
   name: 'reserveInventory',
   requires: z.object({ order: z.object({ items: z.array(z.string()) }) }),
   provides: z.object({ reservationId: z.string() }),
@@ -203,10 +203,10 @@ Each step declares what it reads from context (`requires`) and what it adds
 (`provides`). Step `run` functions can be sync or async.
 
 ```typescript
-import { defineStep } from 'runsheet';
+import { step } from 'runsheet';
 import { z } from 'zod';
 
-const validateOrder = defineStep({
+const validateOrder = step({
   name: 'validateOrder',
   requires: z.object({ orderId: z.string() }),
   provides: z.object({
@@ -219,7 +219,7 @@ const validateOrder = defineStep({
   },
 });
 
-const chargePayment = defineStep({
+const chargePayment = step({
   name: 'chargePayment',
   requires: z.object({ order: z.object({ total: z.number() }) }),
   provides: z.object({ chargeId: z.string() }),
@@ -232,7 +232,7 @@ const chargePayment = defineStep({
   },
 });
 
-const sendConfirmation = defineStep({
+const sendConfirmation = step({
   name: 'sendConfirmation',
   requires: z.object({
     order: z.object({ id: z.string() }),
@@ -273,7 +273,7 @@ Steps compose across domains. The same patterns — typed inputs, rollback on
 failure, accumulated context — apply to any multi-step flow:
 
 ```typescript
-const createWorkspace = defineStep({
+const createWorkspace = step({
   name: 'createWorkspace',
   requires: z.object({ ownerEmail: z.string(), plan: z.string() }),
   provides: z.object({ workspaceId: z.string() }),
@@ -289,7 +289,7 @@ const createWorkspace = defineStep({
   },
 });
 
-const provisionResources = defineStep({
+const provisionResources = step({
   name: 'provisionResources',
   requires: z.object({ workspaceId: z.string(), plan: z.string() }),
   provides: z.object({ bucketArn: z.string(), dbUrl: z.string() }),
@@ -425,7 +425,7 @@ const placeOrder = pipeline<{ orderId: string }>({ name: 'placeOrder' })
 Steps can declare retry policies and timeouts directly:
 
 ```typescript
-const callExternalApi = defineStep({
+const callExternalApi = step({
   name: 'callExternalApi',
   provides: z.object({ response: z.string() }),
   retry: { count: 3, delay: 200, backoff: 'exponential' },
@@ -479,7 +479,7 @@ No special mechanism needed — pass dependencies as pipeline args and they're
 available to every step through the accumulated context:
 
 ```typescript
-const chargePayment = defineStep({
+const chargePayment = step({
   name: 'chargePayment',
   requires: z.object({
     order: z.object({ total: z.number() }),
@@ -537,42 +537,12 @@ const placeOrder = pipeline({
 
 Predicates are evaluated in order — first match wins. A bare step (without a
 tuple) can be passed as the last argument to serve as a default — equivalent to
-`[() => true, step]`. If no predicate matches, the step fails with a
-`CHOICE_NO_MATCH` error. Only the matched branch participates in rollback.
+`[() => true, step]`. If no predicate matches, the step is skipped (empty data,
+no rollback entry). Only the matched branch participates in rollback.
 
-## Collection combinators
+## Distribute (collection fan-out)
 
-### Map (iteration)
-
-Iterate over a collection and run a function or step per item, concurrently —
-like an AWS Step Functions Map state:
-
-```typescript
-import { map } from 'runsheet';
-
-// Function form — items can be any type
-const notifyUsers = map(
-  'emails',
-  (ctx) => ctx.users,
-  async (user) => {
-    await sendEmail(user.email);
-    return { email: user.email, sentAt: new Date() };
-  },
-);
-
-// Step form — reuse existing steps
-const processAll = map('results', (ctx) => ctx.items, processItem);
-```
-
-Items run concurrently via `Promise.allSettled`. Results are collected into an
-array under the given key. In step form, each item is spread into the pipeline
-context (`{ ...ctx, ...item }`) so the step sees both pipeline-level and
-per-item values. On partial failure, succeeded items are rolled back (step form
-only).
-
-### Distribute (collection distribution)
-
-Fan out execution over one or more context collections, binding each item to the
+Fan out a step over one or more context collections, binding each item to the
 step's named scalar inputs. With multiple collections, `distribute` computes the
 cross product and runs the step once per combination.
 
@@ -600,64 +570,6 @@ const generateReports = distribute(
 The mapping object connects context array keys to the step's scalar input keys.
 All non-mapped context keys pass through unchanged. Items run concurrently and
 support partial-failure rollback.
-
-### Filter
-
-```typescript
-import { filter, map } from 'runsheet';
-
-const p = pipeline({
-  name: 'notify',
-  steps: [
-    filter(
-      'eligible',
-      (ctx) => ctx.users,
-      (user) => user.optedIn,
-    ),
-    map('emails', (ctx) => ctx.eligible, sendEmail),
-  ],
-});
-
-// Async predicate
-const validOrders = filter(
-  'valid',
-  (ctx) => ctx.orders,
-  async (order) => {
-    const inventory = await checkInventory(order.sku);
-    return inventory.available >= order.quantity;
-  },
-);
-```
-
-Predicates run concurrently via `Promise.allSettled`. Original order is
-preserved. If any predicate throws, the step fails. No rollback (filtering is a
-pure operation).
-
-### FlatMap
-
-```typescript
-import { flatMap } from 'runsheet';
-
-const allLineItems = flatMap(
-  'lineItems',
-  (ctx) => ctx.orders,
-  (order) => order.items,
-);
-
-// Async callback
-const allEmails = flatMap(
-  'emails',
-  (ctx) => ctx.teams,
-  async (team) => {
-    const members = await fetchMembers(team.id);
-    return members.map((m) => m.email);
-  },
-);
-```
-
-Maps each item to an array, then flattens one level. Callbacks run concurrently
-via `Promise.allSettled`. If any callback throws, the step fails. No rollback
-(pure operation).
 
 ## Step result
 
@@ -687,7 +599,7 @@ Every `run()` returns a `StepResult` with execution metadata:
 
 ## API reference
 
-### `defineStep(config)`
+### `step(config)`
 
 Define a pipeline step. Returns a strongly typed `TypedStep` — `run`,
 `rollback`, `requires`, and `provides` all carry concrete types matching the
@@ -730,13 +642,6 @@ Execute the first branch whose predicate returns `true`. Each branch is a
 default. Returns a single step usable anywhere a regular step is accepted. Only
 the matched branch participates in rollback.
 
-### `map(key, collection, fnOrStep)`
-
-Iterate over a collection and run a function or step per item, concurrently.
-Results are collected into `{ [key]: Result[] }`. Accepts a plain function
-`(item, ctx) => result` or a `TypedStep` (items must be objects, spread into
-context). Step form supports per-item rollback on partial and external failure.
-
 ### `distribute(key, mapping, step)`
 
 Distribute collections from context across a step. The mapping object connects
@@ -744,17 +649,6 @@ context array keys to the step's scalar input keys. Runs the step once per item
 (single mapping) or once per cross-product combination (multiple mappings).
 Non-mapped context keys pass through. Supports per-item rollback on partial and
 external failure.
-
-### `filter(key, collection, predicate)`
-
-Filter a collection from context using a sync or async predicate. Predicates run
-concurrently. Items where the predicate returns `true` are kept; original order
-is preserved. Results are collected into `{ [key]: Item[] }`. No rollback.
-
-### `flatMap(key, collection, fn)`
-
-Map each item in a collection to an array, then flatten one level. Callbacks run
-concurrently. Results are collected into `{ [key]: Result[] }`. No rollback.
 
 ### `when(predicate, step)`
 

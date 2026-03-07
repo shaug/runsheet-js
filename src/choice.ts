@@ -16,7 +16,7 @@ import {
   aggregateFailure,
   createStepObject,
 } from './internal.js';
-import { ChoiceNoMatchError, PredicateError, RollbackError } from './errors.js';
+import { PredicateError, RollbackError } from './errors.js';
 
 /** A [predicate, step] tuple used by {@link choice}. */
 type BranchTuple = readonly [(ctx: Readonly<StepContext>) => boolean, Step];
@@ -58,7 +58,9 @@ function normalizeBranches(args: readonly (BranchTuple | Step)[]): readonly Norm
  *
  * Similar to an AWS Step Functions Choice state — predicates are evaluated
  * in order, and the first match wins. Exactly one branch executes. If no
- * predicate matches, the step fails with a `CHOICE_NO_MATCH` error.
+ * predicate matches, the step returns empty data with an empty
+ * `stepsExecuted` — the enclosing pipeline treats it as a no-op (like a
+ * skipped `when()`).
  *
  * A bare step (without a predicate tuple) can be passed as the last argument
  * to serve as a default branch — it is equivalent to `[() => true, step]`.
@@ -153,9 +155,9 @@ export function choice(...args: (BranchTuple | Step)[]): AggregateStep<StepConte
       return aggregateSuccess(result.data, meta);
     }
 
-    // No branch matched
+    // No branch matched — nothing to execute, like a skipped when()
     const meta = aggregateMeta(name, frozenCtx, []);
-    return aggregateFailure(new ChoiceNoMatchError(`${name}: no branch matched`), meta, name);
+    return aggregateSuccess({}, meta);
   };
 
   // Rollback: only the matched branch needs rollback.

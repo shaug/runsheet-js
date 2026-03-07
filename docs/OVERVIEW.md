@@ -114,9 +114,9 @@ foundation with its own `StepResult` semantics and error handling.
 
 11. **Strong typing as a contract.** The library relies on strong, static typing
     as part of its contract to end-users. `any` is avoided entirely in the
-    source. Type erasure happens at a single, documented cast point in
-    `defineStep()`. The runtime `Step` type is non-generic; `TypedStep<R, P>`
-    adds concrete typed signatures via intersection with phantom brands.
+    source. Type erasure happens at a single, documented cast point in `step()`.
+    The runtime `Step` type is non-generic; `TypedStep<R, P>` adds concrete
+    typed signatures via intersection with phantom brands.
 
 ## Internal architecture
 
@@ -128,10 +128,10 @@ The type system uses a two-layer approach:
   signatures use erased types (`StepContext`, `StepOutput`).
 - **`TypedStep<Requires, Provides>`** — extends `Step` via intersection, adding
   phantom brands and concrete typed signatures for `run`, `rollback`,
-  `requires`, and `provides`. This is what `defineStep()` returns.
+  `requires`, and `provides`. This is what `step()` returns.
 
-The single cast point in `defineStep()` is where typed functions are erased to
-the runtime `Step` representation. This is safe because:
+The single cast point in `step()` is where typed functions are erased to the
+runtime `Step` representation. This is safe because:
 
 1. Schema validation at step boundaries enforces correct types at runtime.
 2. The pipeline accumulates context immutably, so the runtime object
@@ -149,13 +149,13 @@ accumulated output type.
 context = freeze(initialArgs)
 
 for each step in steps:
-  if step is conditional and predicate(context) is false:
-    skip
   snapshot pre-step context
   result = await step.run(context)  // validation happens inside
   if result is failure:
     await rollback(executedSteps)
     return failure with rollback report
+  if result has empty stepsExecuted:
+    continue                        // skipped (e.g., when() with false predicate)
   context = freeze({ ...context, ...result.data })
 
 return success with final context
@@ -195,21 +195,19 @@ it. When used as a step in an outer pipeline:
 
 ## Comparison to prior art
 
-| Feature                | sunny/actor (Ruby)           | runsheet                             | composable-functions  | @fieldguide/pipeline       |
-| ---------------------- | ---------------------------- | ------------------------------------ | --------------------- | -------------------------- |
-| Declared I/O           | `input`/`output` macros      | `requires`/`provides` schemas        | Function signatures   | Args/Context/Results types |
-| Sequential composition | `play A, B, C`               | `pipeline({ steps })`                | `pipe(a, b, c)`       | Builder with stages        |
-| Shared context         | Mutable result object        | Immutable accumulation               | No shared state       | Mutable context            |
-| Rollback               | `def rollback` (trust-based) | Snapshot-verified rollback           | Not supported         | Stage rollback             |
-| Middleware             | Not built-in                 | Built-in                             | `map`/`catchFailure`  | Express-style              |
-| Conditional steps      | `if:`/`unless:` lambdas      | `when(predicate, step)`              | Not built-in          | Not built-in               |
-| Branching              | Not supported                | `choice([pred, step], ...)`          | Not built-in          | Not built-in               |
-| Collection mapping     | Not supported                | `map(key, collection, fn/step)`      | Not built-in          | Not built-in               |
-| Collection filtering   | Not supported                | `filter(key, collection, predicate)` | Not built-in          | Not built-in               |
-| Collection flatMap     | Not supported                | `flatMap(key, collection, fn)`       | Not built-in          | Not built-in               |
-| Result pattern         | `.result()` / `.call()`      | `StepResult<T>`                      | `Result<T>`           | Throws `PipelineError`     |
-| Type safety            | Runtime (Ruby)               | Compile-time + optional runtime      | Compile-time          | Compile-time               |
-| Parallel composition   | Not supported                | `parallel(a, b, ...)`                | `all()` / `collect()` | Not supported              |
+| Feature                | sunny/actor (Ruby)           | runsheet                         | composable-functions  | @fieldguide/pipeline       |
+| ---------------------- | ---------------------------- | -------------------------------- | --------------------- | -------------------------- |
+| Declared I/O           | `input`/`output` macros      | `requires`/`provides` schemas    | Function signatures   | Args/Context/Results types |
+| Sequential composition | `play A, B, C`               | `pipeline({ steps })`            | `pipe(a, b, c)`       | Builder with stages        |
+| Shared context         | Mutable result object        | Immutable accumulation           | No shared state       | Mutable context            |
+| Rollback               | `def rollback` (trust-based) | Snapshot-verified rollback       | Not supported         | Stage rollback             |
+| Middleware             | Not built-in                 | Built-in                         | `map`/`catchFailure`  | Express-style              |
+| Conditional steps      | `if:`/`unless:` lambdas      | `when(predicate, step)`          | Not built-in          | Not built-in               |
+| Branching              | Not supported                | `choice([pred, step], ...)`      | Not built-in          | Not built-in               |
+| Collection fan-out     | Not supported                | `distribute(key, mapping, step)` | Not built-in          | Not built-in               |
+| Result pattern         | `.result()` / `.call()`      | `StepResult<T>`                  | `Result<T>`           | Throws `PipelineError`     |
+| Type safety            | Runtime (Ruby)               | Compile-time + optional runtime  | Compile-time          | Compile-time               |
+| Parallel composition   | Not supported                | `parallel(a, b, ...)`            | `all()` / `collect()` | Not supported              |
 
 <!-- Reference links — please keep alphabetized -->
 

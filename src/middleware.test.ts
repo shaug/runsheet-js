@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { defineStep, pipeline } from './index.js';
+import { step, pipeline } from './index.js';
 import type { StepMiddleware } from './index.js';
 
 describe('middleware', () => {
-  const stepA = defineStep({
+  const stepA = step({
     name: 'stepA',
     provides: z.object({ a: z.number() }),
     run: async () => ({ a: 1 }),
   });
 
-  const stepB = defineStep({
+  const stepB = step({
     name: 'stepB',
     requires: z.object({ a: z.number() }),
     provides: z.object({ b: z.number() }),
@@ -52,7 +52,7 @@ describe('middleware', () => {
       };
     };
 
-    const tracked = defineStep({
+    const tracked = step({
       name: 'tracked',
       run: async () => {
         executedSteps.push('tracked');
@@ -89,14 +89,14 @@ describe('middleware', () => {
       return result;
     };
 
-    const step = defineStep({
+    const s = step({
       name: 'step',
       run: async () => ({ done: true }),
     });
 
     const p = pipeline({
       name: 'test',
-      steps: [step],
+      steps: [s],
       middleware: [outer, inner],
     });
 
@@ -120,7 +120,7 @@ describe('middleware', () => {
       return result;
     };
 
-    const needsName = defineStep({
+    const needsName = step({
       name: 'needsName',
       requires: z.object({ name: z.string() }),
       run: async (ctx) => ({ greeting: `Hi ${ctx.name}` }),
@@ -144,14 +144,14 @@ describe('middleware', () => {
       throw new Error('middleware exploded');
     };
 
-    const step = defineStep({
+    const s = step({
       name: 'step',
       run: async () => ({ done: true }),
     });
 
     const p = pipeline({
       name: 'test',
-      steps: [step],
+      steps: [s],
       middleware: [exploding],
     });
 
@@ -162,7 +162,7 @@ describe('middleware', () => {
   it('middleware throw triggers rollback of prior steps', async () => {
     const rollbackOrder: string[] = [];
 
-    const a = defineStep({
+    const a = step({
       name: 'a',
       provides: z.object({ a: z.number() }),
       run: async () => ({ a: 1 }),
@@ -171,7 +171,7 @@ describe('middleware', () => {
       },
     });
 
-    const b = defineStep({
+    const b = step({
       name: 'b',
       run: async () => ({ b: 2 }),
     });

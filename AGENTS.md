@@ -32,7 +32,7 @@ Pre-commit hook runs lint-staged, typecheck, and test. Do not skip hooks.
   they are positionally required (e.g., `_ctx` when you need the second
   parameter `output`).
 - **Colocated tests.** Test files live alongside source files in `src/` (e.g.,
-  `src/define-step.test.ts`), not in a separate `test/` directory.
+  `src/step.test.ts`), not in a separate `test/` directory.
 
 ### Commits
 
@@ -75,13 +75,13 @@ simplified markup format.
 
 - `Step` — runtime, non-generic type used by the pipeline engine
 - `TypedStep<Requires, Provides>` — compile-time typed wrapper returned by
-  `defineStep()`, uses phantom brands for type tracking
+  `step()`, uses phantom brands for type tracking
 - `AggregateStep<R, P>` — extends `TypedStep` with `run()` returning
   `AggregateResult` instead of `StepResult`
 - Three orchestrators return `AggregateStep`: `pipeline()`, `parallel()`,
   `choice()` — all are steps that compose other steps
-- Three collection transforms return `TypedStep`: `map()`, `filter()`,
-  `flatMap()` — these transform data, not orchestrate steps
+- `distribute()` fans a step out across a collection, returning `TypedStep` —
+  the one collection combinator that needs step semantics
 - `StepResult<T>` — discriminated union (`StepSuccess<T> | StepFailure`) with
   single `error: Error` on failure (not an array)
 - `AggregateResult<T>` — extends `StepResult<T>` with `AggregateMeta`

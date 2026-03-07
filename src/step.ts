@@ -90,7 +90,7 @@ function withRetry<T>(
       `${stepName} failed after ${policy.count} retries`,
       policy.count + 1,
     );
-    error.cause = errors;
+    error.cause = errors.length === 1 ? errors[0] : new AggregateError(errors, error.message);
     throw error;
   };
 }
@@ -113,11 +113,11 @@ function buildExecutor<Requires extends StepContext, Provides extends StepContex
 }
 
 // ---------------------------------------------------------------------------
-// defineStep
+// step()
 // ---------------------------------------------------------------------------
 
 /**
- * Define a pipeline step.
+ * Create a pipeline step.
  *
  * Returns a frozen {@link TypedStep} with concrete types for `run`,
  * `rollback`, `requires`, and `provides`. The `run` function can be
@@ -125,7 +125,7 @@ function buildExecutor<Requires extends StepContext, Provides extends StepContex
  *
  * **With schemas** (runtime validation + type inference):
  * ```ts
- * const charge = defineStep({
+ * const charge = step({
  *   name: 'charge',
  *   requires: z.object({ amount: z.number() }),
  *   provides: z.object({ chargeId: z.string() }),
@@ -135,7 +135,7 @@ function buildExecutor<Requires extends StepContext, Provides extends StepContex
  *
  * **With generics only** (no runtime validation):
  * ```ts
- * const log = defineStep<{ order: Order }, { loggedAt: Date }>({
+ * const log = step<{ order: Order }, { loggedAt: Date }>({
  *   name: 'log',
  *   run: async (ctx) => ({ loggedAt: new Date() }),
  * });
@@ -152,7 +152,7 @@ function buildExecutor<Requires extends StepContext, Provides extends StepContex
  * @param config - The step configuration. See {@link StepConfig}.
  * @returns A frozen {@link TypedStep} ready for use in pipelines.
  */
-export function defineStep<Requires extends StepContext, Provides extends StepContext>(
+export function step<Requires extends StepContext, Provides extends StepContext>(
   config: StepConfig<Requires, Provides>,
 ): TypedStep<Requires, Provides> {
   const execute = buildExecutor(config);

@@ -107,7 +107,7 @@ declare const ProvidesBrand: unique symbol;
  * A step with compile-time type information.
  *
  * Extends the runtime {@link Step} with phantom brands and concrete typed
- * signatures. This is the type returned by `defineStep()`.
+ * signatures. This is the type returned by `step()`.
  *
  * When held as a `TypedStep<R, P>`, the `run`, `rollback`, `requires`,
  * and `provides` properties all carry concrete types matching the step's
@@ -125,7 +125,7 @@ declare const ProvidesBrand: unique symbol;
  * ```ts
  * // Hover over `step.run` to see:
  * //   (ctx: Readonly<{ amount: number }>) => Promise<StepResult<{ chargeId: string }>>
- * const step = defineStep({
+ * const charge = step({
  *   name: 'charge',
  *   requires: z.object({ amount: z.number() }),
  *   provides: z.object({ chargeId: z.string() }),
@@ -225,7 +225,7 @@ export type RetryPolicy = {
 };
 
 /**
- * Configuration object passed to `defineStep()`.
+ * Configuration object passed to `step()`.
  *
  * Schemas are optional — omit them for generics-only steps that rely on
  * compile-time type safety without runtime validation.
