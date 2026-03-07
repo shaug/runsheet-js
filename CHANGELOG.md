@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.7.0](https://github.com/shaug/runsheet-js/compare/v0.6.0...v0.7.0) (2026-03-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* `defineStep` is now `step`. `map`, `filter`, and `flatMap` are removed — use `distribute` for collection fan-out.
+
+### Features
+
+* add distribute() combinator for collection distribution ([e093dd5](https://github.com/shaug/runsheet-js/commit/e093dd5f28b3f8fc648970dd8f0f239822e2f652))
+* rename defineStep to step, remove map/filter/flatMap, fix review findings ([4543b88](https://github.com/shaug/runsheet-js/commit/4543b8820bbe1c42e0ca1e1666c24266c806d76f))
+
+
+### Miscellaneous Chores
+
+* release 0.7.0 ([2a3f53d](https://github.com/shaug/runsheet-js/commit/2a3f53da609b0a76424f3fbcd699be974dc202d7))
+
 ## [0.6.0](https://github.com/shaug/runsheet-js/compare/v0.5.0...v0.6.0) (2026-03-06)
 
 
